@@ -38,8 +38,6 @@ WebServer   server(80);
 LoopTimer   loopTimer;
 uint32_t    chipId = 0;
 uint32_t    MsSinceConnected = 0;
-const char  *wifi_AP_SSID = "Mimir";
-const char  *wifi_AP_Password = "0123456789";
 IPAddress   wifi_AP_local_ip(192,168,1,1);
 IPAddress   wifi_AP_gateway(192,168,1,1);
 IPAddress   wifi_AP_subnet(255,255,255,0);
@@ -47,13 +45,19 @@ IPAddress   wifi_AP_subnet(255,255,255,0);
 // Read these from the flash
 bool        has_wifi_credentials = false;
 bool        has_dirty_credentials = false;
-String      wifi_STA_SSID;
-String      wifi_STA_Pass;
-const int   kEEPROM_ssid_size = 20;  // 20 chars max
-const int   kEEPROM_pass_size = 60;  // 60 chars max
-const int   kEEPROM_ssid_addr = 1;
-const int   kEEPROM_pass_addr = kEEPROM_ssid_addr + kEEPROM_ssid_size;
-const int   kEEPROM_total_size = 1 + kEEPROM_ssid_size + kEEPROM_pass_size;  // first byte is a key == 0
+String      wifi_ST_SSID;
+String      wifi_ST_Pass;
+String		wifi_AP_SSID = "Mimir";
+String		wifi_AP_Pass = "0123456789";
+const int   kEEPROM_ST_ssid_size = 20;  // 20 chars max
+const int   kEEPROM_ST_pass_size = 60;  // 60 chars max
+const int   kEEPROM_AP_ssid_size = 20;  // 20 chars max
+const int   kEEPROM_AP_pass_size = 60;  // 60 chars max
+const int   kEEPROM_ST_ssid_addr = 1;
+const int   kEEPROM_ST_pass_addr = kEEPROM_ST_ssid_addr + kEEPROM_ST_ssid_size;
+const int   kEEPROM_AP_ssid_addr = kEEPROM_ST_pass_addr + kEEPROM_ST_pass_size;
+const int   kEEPROM_AP_pass_addr = kEEPROM_AP_ssid_addr + kEEPROM_AP_ssid_size;
+const int   kEEPROM_total_size = 1 + kEEPROM_ST_ssid_size + kEEPROM_ST_pass_size + kEEPROM_AP_ssid_size + kEEPROM_AP_pass_size;  // first byte is a key == 0
 
 //----------------------------------------------------------------------------
 
@@ -151,9 +155,9 @@ void  ConnectToWiFi()
   if (has_wifi_credentials)
   {
     Serial.print("Connecting to ");
-    Serial.println(wifi_STA_SSID);
+    Serial.println(wifi_ST_SSID);
 
-    WiFi.begin(wifi_STA_SSID, wifi_STA_Pass);
+    WiFi.begin(wifi_ST_SSID, wifi_ST_Pass);
   }
 }
 
@@ -174,7 +178,7 @@ void  WaitForWiFi(int maxMs)
   {
     Serial.println("");
     Serial.print("WiFi connected to ");
-    Serial.println(wifi_STA_SSID);
+    Serial.println(wifi_ST_SSID);
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
   }
@@ -205,7 +209,7 @@ void  EnsureWiFiConnected()
     MsSinceConnected = 0;
     Serial.println("");
     Serial.print("WiFi connected to ");
-    Serial.println(wifi_STA_SSID);
+    Serial.println(wifi_ST_SSID);
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
   }
@@ -253,7 +257,7 @@ static String  _BuildStandardResponsePage(const String &contents)
            "<html><head><style>\r\n"
            "body { font-size: 9pt; font-family: Roboto, Tahoma, Verdana; }\r\n"
            "table { border-collapse: collapse; font-size: 9pt; }\r\n"
-           "td { padding: 2px; padding-left: 10px; padding-right: 10px; border: 1px solid #252525; }\r\n"
+           "td { padding: 2px; padding-left: 10px; padding-right: 10px; }\r\n"
            "td.code { font-family: Consolas, Courier; }\r\n"
            "td.header { color: #AAA; background-color: #505050; }\r\n"
            ".code { font-family: Consolas, Courier; background:#EEE; }\r\n"
@@ -281,7 +285,7 @@ static String  _BuildStandardResponsePage(const String &contents)
     reply += WiFi.RSSI();
     reply += " dB<br/>\r\n";
   }
-  
+
   reply += "</body></html>\r\n";
   return reply;
 }
@@ -292,17 +296,27 @@ static void _HandleRoot()
 {
 //  String  localIp = WiFi.localIP().toString();
   String  reply;
-  reply += "<b>Usage:</b><br/>\r\n";
+  reply += "<b>Usage:</b><br/>\r\n"
+           "TODO<br/>";
 
   reply += "<hr/>\r\n"
            "<h3>Set wifi network credentials:</h3>\r\n"
+           "This will allow the device to connect to your local wifi, and access this page through your wifi network without the need to connect to the access-point.<br/><br/>\r\n"
            "<form action=\"/set_credentials\">\r\n"
-           "  <label for=\"ssid\">Wifi SSID:</label><br>\r\n"
-           "  <input type=\"text\" id=\"ssid\" name=\"ssid\" value=\"" + wifi_STA_SSID + "\"><br>\r\n"
-           "  <label for=\"passwd\">Wifi Password:</label><br>\r\n"
-           "  <input type=\"text\" id=\"passwd\" name=\"passwd\" value=\"" + wifi_STA_Pass + "\"><br><br>\r\n"
-           "  <input type=\"submit\" value=\"Submit\">\r\n"
-           "</form>\r\n";
+           "  <table>\r\n"
+           "  <tr>\r\n"
+           "    <td><label for=\"ssid\">Access-point SSID:</label></td>\r\n"
+           "    <td><input type=\"text\" id=\"ssid\" name=\"ssid\" value=\"" + wifi_ST_SSID + "\"></td>\r\n"
+           "  </tr><tr>\r\n"
+           "    <td><label for=\"passwd\">Access-point Password:</label></td>\r\n"
+           "    <td><input type=\"text\" id=\"passwd\" name=\"passwd\" value=\"" + wifi_ST_Pass + "\"></td>\r\n"
+           "  </tr><tr>\r\n"
+           "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+           "  </tr>\r\n"
+           "  </table>\r\n"
+           "</form>\r\n"
+		   "<hr/>\r\n"
+		   "<a href=\"/set_credentials_ap\">Change access-point settings</a><br/>\r\n";
 
   server.send(200, "text/html", _BuildStandardResponsePage(reply));
 }
@@ -342,19 +356,104 @@ static void _HandleSetCredentials()
        pass = server.arg(i);
   }
 
-  if (ssid != wifi_STA_SSID || pass != wifi_STA_Pass)
+  if (ssid != wifi_ST_SSID || pass != wifi_ST_Pass)
   {
-    wifi_STA_SSID = ssid;
-    wifi_STA_Pass = pass;
+    wifi_ST_SSID = ssid;
+    wifi_ST_Pass = pass;
     ESP32Flash_WriteServerInfo();
-    has_wifi_credentials = wifi_STA_SSID.length() > 0;
+    has_wifi_credentials = wifi_ST_SSID.length() > 0;
     // Reconnect to wifi on next loop:
     has_dirty_credentials = true;
     Serial.println("Got new Wifi network credentials");
   }
 
-  // Redirect immediately to the root
+  // Auto-redirect immediately to the root
   server.send(200, "text/html", "<html><head><meta http-equiv=\"refresh\" content=\"3; URL=/\" /></head><body></body></html>");
+}
+
+//----------------------------------------------------------------------------
+
+static void _HandleSetCredentialsAP()
+{
+  // Expected format:
+  // /set_credentials_ap?ssid=WifiName&passwd=WifiPassword
+
+  String    ssid;
+  String    pass;
+  for (uint8_t i = 0; i < server.args(); i++)
+  {
+    if (server.argName(i) == "ssid")
+       ssid = server.arg(i);
+    else if (server.argName(i) == "passwd")
+       pass = server.arg(i);
+  }
+  
+  String	reply;
+  
+  const bool	hasSSID = ssid.length() != 0;
+  const bool	hasPass = pass.length() != 0;
+  if (!hasSSID && !hasPass)
+  {
+      // No args to the page: Display regular page with the form to change it
+      reply += "<h3>Set access-point credentials</h3>\r\n"
+               "This allows to configure the access-point settings of the device:<br/>\r\n"
+               "It will change how the device appears in the list of wireless networks, and the password needed to connect to it.<br/>\r\n"
+               "<br/>\r\n"
+               "These will only be taken into account after a reboot of the device.<br/>\r\n"
+               "To reboot the device, simply power it off, then on again.<br/>\r\n"
+               "<hr/>\r\n"
+			   "<font color=red><b>!!!! DANGER ZONE !!!</b><br/>\r\n"
+			   "If you do not remember the access-point password, and you did not setup a connection to your local wifi network, there will be no way to recover this.\r\n"
+			   "The device will be \"bricked\" as you won't be able to connect to it from anywhere, and only re-flashing the firmware from the USB connection will be able to fix this.</font><br/>\r\n"
+			   "<br/>\r\n"
+			   "<form action=\"/set_credentials_ap\">\r\n"
+               "  <table>\r\n"
+               "  <tr>\r\n"
+               "    <td><label for=\"ssid\">Access-point SSID:</label></td>\r\n"
+               "    <td><input type=\"text\" id=\"ssid\" name=\"ssid\" value=\"" + wifi_AP_SSID + "\"></td>\r\n"
+               "  </tr><tr>\r\n"
+               "    <td><label for=\"passwd\">Access-point Password:</label></td>\r\n"
+               "    <td><input type=\"text\" id=\"passwd\" name=\"passwd\" value=\"" + wifi_AP_Pass + "\"></td>\r\n"
+               "  </tr><tr>\r\n"
+               "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+               "  </tr>\r\n"
+               "  </table>\r\n"
+			   "</form>\r\n";
+
+	  reply = _BuildStandardResponsePage(reply);
+  }
+  else if (hasSSID != hasPass)
+  {
+	  // One of them is empty but not the other: Don't allow.
+	  // We must have a non-empty password and a non-empty access-point name.
+      reply += "<h3>Set access-point credentials</h3>\r\n"
+               "Invalid credentials: You must specify both an SSID (the name the device as it will appear in the wifi networks list), as well as a password (the password you will need to enter to connect to the device).<br/>\r\n"
+               "<br/>\r\n"
+			   "</form>\r\n";
+
+	  reply = _BuildStandardResponsePage(reply);
+  }
+  else
+  {
+	  // Both are non-empty: OK
+	  if (ssid != wifi_ST_SSID || pass != wifi_ST_Pass)
+	  {
+		wifi_AP_SSID = ssid;
+		wifi_AP_Pass = pass;
+		ESP32Flash_WriteServerInfo();
+		// New AP name will be taken into account on next device boot: That's OK
+		
+		// If we want to do it without reboot, set a flag here, and in 'loop()', if the flag is set, call 'SetupServer()'.
+		// However it will disconnect the current connection, and might be balls-breaking. IE: maybe you made a typo in the password,
+		// and you have no way to re-check it once you clicked 'Submit', and.. you'll be fucked ! you'll have to re-upload a new firmware
+		// if you had not connected to the local wifi before. So this is dangerous.
+	  }
+	  // Auto-redirect immediately back to root
+	  reply = "<html><head><meta http-equiv=\"refresh\" content=\"3; URL=/\" /></head><body></body></html>";
+  }
+
+  // Redirect immediately to the root
+  server.send(200, "text/html", reply);
 }
 
 //----------------------------------------------------------------------------
@@ -366,12 +465,13 @@ void  SetupServer()
 
   WiFi.mode(WIFI_AP_STA);
   Serial.print("Setting up access-point");
-  WiFi.softAP(wifi_AP_SSID, wifi_AP_Password);
+  WiFi.softAP(wifi_AP_SSID, wifi_AP_Pass);
   WiFi.softAPConfig(wifi_AP_local_ip, wifi_AP_gateway, wifi_AP_subnet);
 
   // Setup server callbacks/handlers
   server.on("/", _HandleRoot);
   server.on("/set_credentials", _HandleSetCredentials);
+  server.on("/set_credentials_ap", _HandleSetCredentialsAP);
   server.onNotFound(_HandleNotFound);
 
   // Start the server
@@ -381,15 +481,15 @@ void  SetupServer()
 
 //----------------------------------------------------------------------------
 //
-//  EEPROM helper for ESP8266
+//  EEPROM helper for ESP32
 //  Will not work on regular arduino, EEPROM interface is slightly different.
-//  EEPROM emulates through flash memory on ESP8266
+//  EEPROM emulates through flash memory on ESP32
 //
 //----------------------------------------------------------------------------
 
 void  ESP32Flash_Init()
 {
-  EEPROM.begin(kEEPROM_total_size); // we actually only need 19 bytes
+  EEPROM.begin(kEEPROM_total_size);
 
   // factory-initialized to 0xFF. Our first byte should always be exactly 0.
   // If it's not, wipe the entire memory.
@@ -405,22 +505,36 @@ void  ESP32Flash_Init()
 
 void  ESP32Flash_WriteServerInfo()
 {
-  char      eeprom_ssid[kEEPROM_ssid_size] = {};
-  char      eeprom_pass[kEEPROM_pass_size] = {};
-  static_assert(sizeof(eeprom_ssid) == kEEPROM_ssid_size);
-  static_assert(sizeof(eeprom_pass) == kEEPROM_pass_size);
+  char      eeprom_ST_ssid[kEEPROM_ST_ssid_size] = {};
+  char      eeprom_ST_pass[kEEPROM_ST_pass_size] = {};
+  char      eeprom_AP_ssid[kEEPROM_AP_ssid_size] = {};
+  char      eeprom_AP_pass[kEEPROM_AP_pass_size] = {};
+  static_assert(sizeof(eeprom_ST_ssid) == kEEPROM_ST_ssid_size);
+  static_assert(sizeof(eeprom_ST_pass) == kEEPROM_ST_pass_size);
+  static_assert(sizeof(eeprom_AP_ssid) == kEEPROM_AP_ssid_size);
+  static_assert(sizeof(eeprom_AP_pass) == kEEPROM_AP_pass_size);
 
-  for (int i = 0; i < wifi_STA_SSID.length() && i < sizeof(eeprom_ssid)-1 - 1; i++)
-    eeprom_ssid[i] = wifi_STA_SSID[i];
-  eeprom_ssid[sizeof(eeprom_ssid)-1] = '\0';
+  for (int i = 0; i < wifi_ST_SSID.length() && i < sizeof(eeprom_ST_ssid)-1 - 1; i++)
+    eeprom_ST_ssid[i] = wifi_ST_SSID[i];
+  eeprom_ST_ssid[sizeof(eeprom_ST_ssid)-1] = '\0';
 
-  for (int i = 0; i < wifi_STA_Pass.length() && i < sizeof(eeprom_pass)-1 - 1; i++)
-    eeprom_pass[i] = wifi_STA_Pass[i];
-  eeprom_pass[sizeof(eeprom_pass)-1] = '\0';
+  for (int i = 0; i < wifi_ST_Pass.length() && i < sizeof(eeprom_ST_pass)-1 - 1; i++)
+    eeprom_ST_pass[i] = wifi_ST_Pass[i];
+  eeprom_ST_pass[sizeof(eeprom_ST_pass)-1] = '\0';
+
+  for (int i = 0; i < wifi_AP_SSID.length() && i < sizeof(eeprom_AP_ssid)-1 - 1; i++)
+    eeprom_AP_ssid[i] = wifi_AP_SSID[i];
+  eeprom_AP_ssid[sizeof(eeprom_AP_ssid)-1] = '\0';
+
+  for (int i = 0; i < wifi_AP_Pass.length() && i < sizeof(eeprom_AP_pass)-1 - 1; i++)
+    eeprom_AP_pass[i] = wifi_AP_Pass[i];
+  eeprom_AP_pass[sizeof(eeprom_AP_pass)-1] = '\0';
 
   EEPROM.write(0, 0);
-  EEPROM.put(kEEPROM_ssid_addr, eeprom_ssid);
-  EEPROM.put(kEEPROM_pass_addr, eeprom_pass);
+  EEPROM.put(kEEPROM_ST_ssid_addr, eeprom_ST_ssid);
+  EEPROM.put(kEEPROM_ST_pass_addr, eeprom_ST_pass);
+  EEPROM.put(kEEPROM_AP_ssid_addr, eeprom_AP_ssid);
+  EEPROM.put(kEEPROM_AP_pass_addr, eeprom_AP_pass);
   EEPROM.commit();
 }
 
@@ -428,19 +542,28 @@ void  ESP32Flash_WriteServerInfo()
 
 void  ESP32Flash_ReadServerInfo()
 {
-  Serial.printf("READING FROM EEPROM\n");
-  char      eeprom_ssid[kEEPROM_ssid_size] = {};
-  char      eeprom_pass[kEEPROM_pass_size] = {};
-  static_assert(sizeof(eeprom_ssid) == kEEPROM_ssid_size);
-  static_assert(sizeof(eeprom_pass) == kEEPROM_pass_size);
+  char      eeprom_ST_ssid[kEEPROM_ST_ssid_size] = {};
+  char      eeprom_ST_pass[kEEPROM_ST_pass_size] = {};
+  char      eeprom_AP_ssid[kEEPROM_AP_ssid_size] = {};
+  char      eeprom_AP_pass[kEEPROM_AP_pass_size] = {};
+  static_assert(sizeof(eeprom_ST_ssid) == kEEPROM_ST_ssid_size);
+  static_assert(sizeof(eeprom_ST_pass) == kEEPROM_ST_pass_size);
+  static_assert(sizeof(eeprom_AP_ssid) == kEEPROM_AP_ssid_size);
+  static_assert(sizeof(eeprom_AP_pass) == kEEPROM_AP_pass_size);
 
-  EEPROM.get(kEEPROM_ssid_addr, eeprom_ssid);
-  EEPROM.get(kEEPROM_pass_addr, eeprom_pass);
-  eeprom_ssid[sizeof(eeprom_ssid)-1] = '\0';
-  eeprom_pass[sizeof(eeprom_pass)-1] = '\0';
+  EEPROM.get(kEEPROM_ST_ssid_addr, eeprom_ST_ssid);
+  EEPROM.get(kEEPROM_ST_pass_addr, eeprom_ST_pass);
+  EEPROM.get(kEEPROM_AP_ssid_addr, eeprom_AP_ssid);
+  EEPROM.get(kEEPROM_AP_pass_addr, eeprom_AP_pass);
+  eeprom_ST_ssid[sizeof(eeprom_ST_ssid)-1] = '\0';
+  eeprom_ST_pass[sizeof(eeprom_ST_pass)-1] = '\0';
+  eeprom_AP_ssid[sizeof(eeprom_AP_ssid)-1] = '\0';
+  eeprom_AP_pass[sizeof(eeprom_AP_pass)-1] = '\0';
 
-  wifi_STA_SSID = eeprom_ssid;
-  wifi_STA_Pass = eeprom_pass;
-  if (eeprom_ssid[0] != '\0') // don't check pass: allow empty password ?
+  wifi_ST_SSID = eeprom_ST_ssid;
+  wifi_ST_Pass = eeprom_ST_pass;
+  wifi_AP_SSID = eeprom_AP_ssid;
+  wifi_AP_Pass = eeprom_AP_pass;
+  if (eeprom_ST_ssid[0] != '\0') // don't check pass: allow empty password
     has_wifi_credentials = true;
 }
