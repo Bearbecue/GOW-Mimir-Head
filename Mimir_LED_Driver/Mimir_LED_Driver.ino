@@ -16,19 +16,25 @@
 // LED count
 // 30 LEDs total across the whole head
 
-#define NUM_LEDS_NECK     3*4
-#define NUM_LEDS_MANDIBLE 2*5
-#define NUM_LEDS_TEMPLES  2*2
-#define NUM_LEDS_EYES     2*1
-#define NUM_LEDS_NOSE     1
+#define NUM_LEDS_NECK       3*3
+#define NUM_LEDS_MANDIBLE_S 10
+#define NUM_LEDS_MANDIBLE_B 8
+#define NUM_LEDS_TEMPLE_R   2
+#define NUM_LEDS_TEMPLE_L   2
+#define NUM_LEDS_EYE_R      1
+#define NUM_LEDS_EYE_L      1
+#define NUM_LEDS_NOSE       2
 
-#define NUM_LEDS          NUM_LEDS_NECK + NUM_LEDS_MANDIBLE + NUM_LEDS_TEMPLES + NUM_LEDS_EYES + NUM_LEDS_NOSE
+#define NUM_LEDS          (NUM_LEDS_NECK + NUM_LEDS_MANDIBLE_S + NUM_LEDS_MANDIBLE_B + NUM_LEDS_TEMPLE_R + NUM_LEDS_TEMPLE_L + NUM_LEDS_EYE_R + NUM_LEDS_EYE_L + NUM_LEDS_NOSE)
 
 #define LED_ID_NECK       0
-#define LED_ID_MANDIBLE   LED_ID_NECK + NUM_LEDS_NECK
-#define LED_ID_TEMPLES    LED_ID_MANDIBLE + NUM_LEDS_MANDIBLE
-#define LED_ID_EYES       LED_ID_TEMPLES + NUM_LEDS_TEMPLES
-#define LED_ID_NOSE       LED_ID_EYES + NUM_LEDS_EYES
+#define LED_ID_MANDIBLE_S LED_ID_NECK + NUM_LEDS_NECK
+#define LED_ID_MANDIBLE_B LED_ID_MANDIBLE_S + NUM_LEDS_MANDIBLE_S
+#define LED_ID_TEMPLE_R   LED_ID_MANDIBLE_B + NUM_LEDS_MANDIBLE_B
+#define LED_ID_EYE_R      LED_ID_TEMPLE_R + NUM_LEDS_TEMPLE_R
+#define LED_ID_NOSE       LED_ID_EYE_R + NUM_LEDS_EYE_R
+#define LED_ID_TEMPLE_L   LED_ID_NOSE + NUM_LEDS_NOSE
+#define LED_ID_EYE_L      LED_ID_TEMPLE_L + NUM_LEDS_TEMPLE_L
 
 //----------------------------------------------------------------------------
 
@@ -47,17 +53,60 @@ bool        has_wifi_credentials = false;
 bool        has_dirty_credentials = false;
 String      wifi_ST_SSID;
 String      wifi_ST_Pass;
-String		wifi_AP_SSID = "Mimir";
-String		wifi_AP_Pass = "0123456789";
+String		  wifi_AP_SSID;
+String		  wifi_AP_Pass;
+int32_t     state_mode = 0;
+int32_t     state_brightness = 255;
+int32_t     state_speed_main = 128;
+int32_t     state_speed_eyes = 128;
+int32_t     state_hue_shift = 0;
+CRGB        state_color_eye_l = CRGB(255, 255, 255);
+CRGB        state_color_eye_r = CRGB(255, 255, 255);
+CRGB        state_color_neck = CRGB(255, 255, 255);
+CRGB        state_color_nose = CRGB(255, 255, 255);
+CRGB        state_color_temples = CRGB(255, 255, 255);
+CRGB        state_color_mandible = CRGB(255, 255, 255);
+CRGB        state_color_throat = CRGB(255, 255, 255);
+
 const int   kEEPROM_ST_ssid_size = 20;  // 20 chars max
 const int   kEEPROM_ST_pass_size = 60;  // 60 chars max
 const int   kEEPROM_AP_ssid_size = 20;  // 20 chars max
 const int   kEEPROM_AP_pass_size = 60;  // 60 chars max
+const int   kEEPROM_mode_size = 4;
+const int   kEEPROM_bright_size = 4;
+const int   kEEPROM_speed_main_size = 4;
+const int   kEEPROM_speed_eyes_size = 4;
+const int   kEEPROM_hue_shift_size = 4;
+const int   kEEPROM_col_eye_l_size = 3;
+const int   kEEPROM_col_eye_r_size = 3;
+const int   kEEPROM_col_neck_size = 3;
+const int   kEEPROM_col_nose_size = 3;
+const int   kEEPROM_col_temples_size = 3;
+const int   kEEPROM_col_mandible_size = 3;
+const int   kEEPROM_col_throat_size = 3;
+
 const int   kEEPROM_ST_ssid_addr = 1;
 const int   kEEPROM_ST_pass_addr = kEEPROM_ST_ssid_addr + kEEPROM_ST_ssid_size;
 const int   kEEPROM_AP_ssid_addr = kEEPROM_ST_pass_addr + kEEPROM_ST_pass_size;
 const int   kEEPROM_AP_pass_addr = kEEPROM_AP_ssid_addr + kEEPROM_AP_ssid_size;
-const int   kEEPROM_total_size = 1 + kEEPROM_ST_ssid_size + kEEPROM_ST_pass_size + kEEPROM_AP_ssid_size + kEEPROM_AP_pass_size;  // first byte is a key == 0
+const int   kEEPROM_mode_addr = kEEPROM_AP_pass_addr + kEEPROM_AP_pass_size;
+const int   kEEPROM_bright_addr = kEEPROM_mode_addr + kEEPROM_mode_size;
+const int   kEEPROM_speed_main_addr = kEEPROM_bright_addr + kEEPROM_bright_size;
+const int   kEEPROM_speed_eyes_addr = kEEPROM_speed_main_addr + kEEPROM_speed_main_size;
+const int   kEEPROM_hue_shift_addr = kEEPROM_speed_eyes_addr + kEEPROM_speed_eyes_size;
+const int   kEEPROM_col_eye_l_addr = kEEPROM_hue_shift_addr + kEEPROM_hue_shift_size;
+const int   kEEPROM_col_eye_r_addr = kEEPROM_col_eye_l_addr + kEEPROM_col_eye_l_size;
+const int   kEEPROM_col_neck_addr = kEEPROM_col_eye_r_addr + kEEPROM_col_eye_r_size;
+const int   kEEPROM_col_nose_addr = kEEPROM_col_neck_addr + kEEPROM_col_neck_size;
+const int   kEEPROM_col_temples_addr = kEEPROM_col_nose_addr + kEEPROM_col_nose_size;
+const int   kEEPROM_col_mandible_addr = kEEPROM_col_temples_addr + kEEPROM_col_temples_size;
+const int   kEEPROM_col_throat_addr = kEEPROM_col_mandible_addr + kEEPROM_col_mandible_size;
+
+const int   kEEPROM_total_size = 1 + // first byte is a key == 0
+                                 kEEPROM_ST_ssid_size + kEEPROM_ST_pass_size + kEEPROM_AP_ssid_size + kEEPROM_AP_pass_size +
+                                 kEEPROM_mode_addr + kEEPROM_bright_addr + kEEPROM_speed_main_addr + kEEPROM_speed_eyes_addr + kEEPROM_hue_shift_addr +
+                                 kEEPROM_col_eye_l_addr + kEEPROM_col_eye_r_addr + kEEPROM_col_neck_addr + kEEPROM_col_nose_addr +
+                                 kEEPROM_col_temples_addr + kEEPROM_col_mandible_addr + kEEPROM_col_throat_addr;
 
 //----------------------------------------------------------------------------
 
@@ -78,27 +127,15 @@ void setup()
   Serial.begin(115200);
   Serial.println();
 
-  delay(15000);
+//  delay(15000); // DEBUG
 
-  // Read the server's IP & port we recorded from the previous runs to instantly connect to
-  // what will likely be the correct one if we reboot.
-  ESP32Flash_Init();
-  ESP32Flash_ReadServerInfo();
-
-  // Setup wifi in both access-point & station mode:
-  SetupServer();
-
-  Serial.print("Connecting to wifi...\n");
-
-  ConnectToWiFi();
-  WaitForWiFi(2000);  // Wait at most 2 seconds for wifi
-
+  // Init baselines
+  chipId = 0;
   for(int i=0; i<17; i=i+8)
     chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
-
   Serial.printf("ESP32 Chip model = %s Rev %d\n", ESP.getChipModel(), ESP.getChipRevision());
   Serial.printf("This chip has %d cores\n", ESP.getChipCores());
-  Serial.print("Chip ID: "); Serial.println(chipId);
+  Serial.printf("Chip ID: %08X\n", chipId);
 
   // Dump MAC address to serial. Useful for dev during initial network setup.
   // Just send the mac address to @vksiezak to pin this module to a specific IP address
@@ -107,6 +144,30 @@ void setup()
     WiFi.macAddress(macAddr);
     Serial.printf("Mac address: %02x:%02x:%02x:%02x:%02x:%02x\n", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
   }
+
+  // Init default AP name before reading from flash
+  wifi_AP_SSID = "Mimir_" + String(chipId, HEX);
+  wifi_AP_Pass = "0123456789";
+
+  // Read the AP name & pass + server's IP & port we recorded from the previous runs to instantly connect to
+  // what will likely be the correct one if we reboot.
+  ESP32Flash_Init();
+  ESP32Flash_ReadServerInfo();
+
+  // Setup wifi in both access-point & station mode:
+  SetupServer();
+
+  // Try to connect to the wifi network
+  ConnectToWiFi();
+
+  WaitForWiFi(2000);  // Wait at most 2 seconds for wifi
+}
+
+//----------------------------------------------------------------------------
+
+CRGB  ShiftHue(const CRGB &color, int32_t shift)
+{
+  return color; // Placeholder
 }
 
 //----------------------------------------------------------------------------
@@ -121,24 +182,95 @@ void loop()
   const float   dt = loopTimer.dt();
   const float   et = loopTimer.elapsedTime();
 
-  static float  t = 0;
   static int    x = 0;
-  t += dt;
-  if (t > 2.0f)
   {
-    t -= 2.0f;
-    x++;
+    static float  t = 0;
+    const float   p = 0.2f;
+    t += dt;
+    if (t > p)
+    {
+      t -= p;
+      x++;
+    }
   }
 
-  const float b = sinf(et) * 0.5f + 0.5f;
-  int c0 = clamp((int)(b * 255) + 1, 1, 255);
-  int c1 = clamp((int)(b * 50), 0, 255);
+  // What to configure:
+  // - Mode: 0=normal, 1= color debug, 3=ID cycle, 2=RGB cycle
+  // - overall hue shift
+  // - 5 inner colors
+  // - 2 eye colors
+  // - animation speed (main)
+  // - animation speed (eyes)
 
-  for (int i = 0; i < NUM_LEDS; i++)
+  FastLED.setBrightness(state_brightness);
+
+  if (state_mode == 0 || state_mode == 1)
   {
-    int key = (i + x) % NUM_LEDS;
-    leds[i].setRGB((key % 3) == 0 ? c0 : c1, ((key + 1) % 3) == 0 ? c0 : c1, ((key + 2) % 3) == 0 ? c0 : c1);
+    CRGB  colorNeck       = CRGB(255, 40, 10);
+    CRGB  colorMandibleS  = CRGB(255, 150, 10);
+    CRGB  colorMandibleB  = CRGB(10, 150, 255);
+    CRGB  colorTempleR    = CRGB(80, 255, 10);
+    CRGB  colorTempleL    = CRGB(80, 255, 10);
+    CRGB  colorEyeR       = CRGB(255, 0, 0);
+    CRGB  colorEyeL       = CRGB(255, 0, 0);
+    CRGB  colorBottom     = CRGB(255, 10, 150);
+
+    if (state_mode == 0)
+    {
+      colorNeck       = ShiftHue(state_color_neck, state_hue_shift);
+      colorMandibleS  = ShiftHue(state_color_mandible, state_hue_shift);
+      colorMandibleB  = ShiftHue(state_color_throat, state_hue_shift);
+      colorTempleR    = ShiftHue(state_color_temples, state_hue_shift);
+      colorTempleL    = ShiftHue(state_color_temples, state_hue_shift);
+      colorEyeR       = ShiftHue(state_color_eye_r, state_hue_shift);
+      colorEyeL       = ShiftHue(state_color_eye_l, state_hue_shift);
+      colorBottom     = ShiftHue(state_color_nose, state_hue_shift);
+
+      // Animation
+      // Use a "propagation cursor" for each individual LED, starting at 0 at the base of the C3 vertebrae, and ending at the jaw extremity, and eyes
+      // Use this cursor to lookup a noise function, and propagate intensity waves across.
+      // On top of it, add a second global noise to vary intensity
+    }
+
+    for (int i = 0; i < NUM_LEDS_NECK; i++)
+      leds[i + LED_ID_NECK] = colorNeck;
+    for (int i = 0; i < NUM_LEDS_MANDIBLE_S; i++)
+      leds[i + LED_ID_MANDIBLE_S] = colorMandibleS;
+    for (int i = 0; i < NUM_LEDS_MANDIBLE_B; i++)
+      leds[i + LED_ID_MANDIBLE_B] = colorMandibleB;
+    for (int i = 0; i < NUM_LEDS_TEMPLE_R; i++)
+      leds[i + LED_ID_TEMPLE_R] = colorTempleR;
+    for (int i = 0; i < NUM_LEDS_EYE_R; i++)
+      leds[i + LED_ID_EYE_R] = colorEyeR;
+    for (int i = 0; i < NUM_LEDS_NOSE; i++)
+      leds[i + LED_ID_NOSE] = colorBottom;
+    for (int i = 0; i < NUM_LEDS_TEMPLE_L; i++)
+      leds[i + LED_ID_TEMPLE_L] = colorTempleL;
+    for (int i = 0; i < NUM_LEDS_EYE_L; i++)
+      leds[0 + LED_ID_EYE_L] = colorEyeL;
   }
+  else if (state_mode == 2)
+  {
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+      if (i == (x % NUM_LEDS))
+        leds[i].setRGB(255, 255, 255);
+      else
+        leds[i].setRGB(255, 50, 10);
+    }
+  }
+  else
+  {
+    const float b = sinf(et) * 0.5f + 0.5f;
+    int c0 = clamp((int)(b * 255) + 1, 1, 255);
+    int c1 = clamp((int)(b * 50), 0, 255);
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+      int key = (i + x) % NUM_LEDS;
+      leds[i].setRGB((key % 3) == 0 ? c0 : c1, ((key + 1) % 3) == 0 ? c0 : c1, ((key + 2) % 3) == 0 ? c0 : c1);
+    }
+  }
+
   FastLED.show();
 
   delay(10);
@@ -152,19 +284,22 @@ void loop()
 
 void  ConnectToWiFi()
 {
-  if (has_wifi_credentials)
-  {
-    Serial.print("Connecting to ");
-    Serial.println(wifi_ST_SSID);
+  if (!has_wifi_credentials)  // Nothing to connect to if we don't have any credentials
+    return;
 
-    WiFi.begin(wifi_ST_SSID, wifi_ST_Pass);
-  }
+  Serial.println("Connecting to wifi...");
+  Serial.println("Connecting to " + wifi_ST_SSID);
+
+  WiFi.begin(wifi_ST_SSID, wifi_ST_Pass);
 }
 
 //----------------------------------------------------------------------------
 
 void  WaitForWiFi(int maxMs)
 {
+  if (!has_wifi_credentials)  // Nothing to wait on if we don't have any credentials
+    return;
+
   const int kMsPerRetry = 500;
   int retries = max(maxMs / kMsPerRetry, 1);
   Serial.print("Waiting for Wifi connection");
@@ -173,10 +308,10 @@ void  WaitForWiFi(int maxMs)
     delay(500);
     Serial.print(".");
   }
+  Serial.println("");
 
   if (WiFi.status() == WL_CONNECTED)
   {
-    Serial.println("");
     Serial.print("WiFi connected to ");
     Serial.println(wifi_ST_SSID);
     Serial.println("IP address: ");
@@ -262,7 +397,7 @@ static String  _BuildStandardResponsePage(const String &contents)
            "td.header { color: #AAA; background-color: #505050; }\r\n"
            ".code { font-family: Consolas, Courier; background:#EEE; }\r\n"
            "</style></head><body>\r\n"
-          "<h1>Mimir server</h1>\r\n"
+           "<h1>Mimir server</h1>\r\n"
            "<hr/>\r\n";
   reply += contents;
   reply += "<hr/>\r\n"
@@ -271,6 +406,10 @@ static String  _BuildStandardResponsePage(const String &contents)
   reply += "<br/>\r\n"
            "Requests since startup: ";
   reply += ++reqId;
+  reply += "<br/>\r\n"
+           "Chip ID: <font class=\"code\">";
+  reply += String(chipId, HEX);
+  reply += "</font>";
   reply += "<br/>\r\n"
            "MAC Address: <font class=\"code\">";
   reply += WiFi.macAddress() + "</font>";
@@ -291,32 +430,67 @@ static String  _BuildStandardResponsePage(const String &contents)
 }
 
 //----------------------------------------------------------------------------
+// HTML form helpers
+
+#define FORM_INPUTBOX(__name, __title, __value) \
+    "  <tr>\r\n" \
+    "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
+    "    <td><input type=\"text\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
+    "  </tr>"
+#define FORM_SLIDER(__name, __title, __max, __value) \
+    "  <tr>\r\n" \
+    "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
+    "    <td><input type=\"range\" min=\"0\" max=\"255\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
+    "  </tr>"
+#define FORM_RGB(__name, __title, __value_r, __value_g, __value_b) \
+    "  <tr>\r\n" \
+    "    <td><label for=\"" __name "_r\">" __title ":</label></td>\r\n" \
+    "    <td><input type=\"text\" id=\"" __name "_r\" name=\"" __name "_r\" value=\"" + __value_r + "\" style=\"width:50px\">\r\n" \
+    "        <input type=\"text\" id=\"" __name "_g\" name=\"" __name "_g\" value=\"" + __value_g + "\" style=\"width:50px\">\r\n" \
+    "        <input type=\"text\" id=\"" __name "_b\" name=\"" __name "_b\" value=\"" + __value_b + "\" style=\"width:50px\"></td>\r\n" \
+    "  </tr><tr>\r\n"
+
+//----------------------------------------------------------------------------
 
 static void _HandleRoot()
 {
-//  String  localIp = WiFi.localIP().toString();
   String  reply;
-  reply += "<b>Usage:</b><br/>\r\n"
-           "TODO<br/>";
+  reply += "<b>Configure lighting:</b><br/>\r\n"
+           "<form action=\"/configure\">\r\n"
+           "  <table>\r\n"
+           FORM_INPUTBOX("mode", "Mode", String(state_mode))
+           FORM_SLIDER("brightness", "Brightness", "255", String(state_brightness))
+           FORM_SLIDER("speed_main", "Anim speed (main)", "100", String(state_speed_main))
+           FORM_SLIDER("speed_eyes", "Anim speed (eyes)", "100", String(state_speed_eyes))
+           FORM_SLIDER("hue_shift", "Hue shift", "255", String(state_hue_shift))
+           FORM_RGB("col_eye_l", "Left eye color", String(state_color_eye_l.r), String(state_color_eye_l.g), String(state_color_eye_l.b))
+           FORM_RGB("col_eye_r", "Right eye color", String(state_color_eye_r.r), String(state_color_eye_r.g), String(state_color_eye_r.b))
+           FORM_RGB("col_neck", "Neck color", String(state_color_neck.r), String(state_color_neck.g), String(state_color_neck.b))
+           FORM_RGB("col_nose", "Nose color", String(state_color_nose.r), String(state_color_nose.g), String(state_color_nose.b))
+           FORM_RGB("col_temples", "Temples color", String(state_color_temples.r), String(state_color_temples.g), String(state_color_temples.b))
+           FORM_RGB("col_mandible", "Mandible color", String(state_color_mandible.r), String(state_color_mandible.g), String(state_color_mandible.b))
+           FORM_RGB("col_throat", "Throat color", String(state_color_throat.r), String(state_color_throat.g), String(state_color_throat.b))
+           "  <tr>\r\n"
+           "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+           "  </tr>\r\n"
+           "  </table>\r\n"
+           "</form>\r\n"
+           "<hr/>\r\n";
 
   reply += "<hr/>\r\n"
            "<h3>Set wifi network credentials:</h3>\r\n"
            "This will allow the device to connect to your local wifi, and access this page through your wifi network without the need to connect to the access-point.<br/><br/>\r\n"
            "<form action=\"/set_credentials\">\r\n"
            "  <table>\r\n"
+           FORM_INPUTBOX("ssid", "WiFi SSID", wifi_ST_SSID)
+           FORM_INPUTBOX("passwd", "WiFi Password", wifi_ST_Pass)
            "  <tr>\r\n"
-           "    <td><label for=\"ssid\">Access-point SSID:</label></td>\r\n"
-           "    <td><input type=\"text\" id=\"ssid\" name=\"ssid\" value=\"" + wifi_ST_SSID + "\"></td>\r\n"
-           "  </tr><tr>\r\n"
-           "    <td><label for=\"passwd\">Access-point Password:</label></td>\r\n"
-           "    <td><input type=\"text\" id=\"passwd\" name=\"passwd\" value=\"" + wifi_ST_Pass + "\"></td>\r\n"
-           "  </tr><tr>\r\n"
            "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
            "  </tr>\r\n"
            "  </table>\r\n"
            "</form>\r\n"
-		   "<hr/>\r\n"
-		   "<a href=\"/set_credentials_ap\">Change access-point settings</a><br/>\r\n";
+    		   "<hr/>\r\n"
+    		   "<a href=\"/set_credentials_ap\">Change access-point settings</a><br/>\r\n";
 
   server.send(200, "text/html", _BuildStandardResponsePage(reply));
 }
@@ -362,8 +536,7 @@ static void _HandleSetCredentials()
     wifi_ST_Pass = pass;
     ESP32Flash_WriteServerInfo();
     has_wifi_credentials = wifi_ST_SSID.length() > 0;
-    // Reconnect to wifi on next loop:
-    has_dirty_credentials = true;
+    has_dirty_credentials = true;  // Reconnect to wifi on next loop
     Serial.println("Got new Wifi network credentials");
   }
 
@@ -394,31 +567,27 @@ static void _HandleSetCredentialsAP()
   const bool	hasPass = pass.length() != 0;
   if (!hasSSID && !hasPass)
   {
-      // No args to the page: Display regular page with the form to change it
-      reply += "<h3>Set access-point credentials</h3>\r\n"
-               "This allows to configure the access-point settings of the device:<br/>\r\n"
-               "It will change how the device appears in the list of wireless networks, and the password needed to connect to it.<br/>\r\n"
-               "<br/>\r\n"
-               "These will only be taken into account after a reboot of the device.<br/>\r\n"
-               "To reboot the device, simply power it off, then on again.<br/>\r\n"
-               "<hr/>\r\n"
-			   "<font color=red><b>!!!! DANGER ZONE !!!</b><br/>\r\n"
-			   "If you do not remember the access-point password, and you did not setup a connection to your local wifi network, there will be no way to recover this.\r\n"
-			   "The device will be \"bricked\" as you won't be able to connect to it from anywhere, and only re-flashing the firmware from the USB connection will be able to fix this.</font><br/>\r\n"
-			   "<br/>\r\n"
-			   "<form action=\"/set_credentials_ap\">\r\n"
-               "  <table>\r\n"
-               "  <tr>\r\n"
-               "    <td><label for=\"ssid\">Access-point SSID:</label></td>\r\n"
-               "    <td><input type=\"text\" id=\"ssid\" name=\"ssid\" value=\"" + wifi_AP_SSID + "\"></td>\r\n"
-               "  </tr><tr>\r\n"
-               "    <td><label for=\"passwd\">Access-point Password:</label></td>\r\n"
-               "    <td><input type=\"text\" id=\"passwd\" name=\"passwd\" value=\"" + wifi_AP_Pass + "\"></td>\r\n"
-               "  </tr><tr>\r\n"
-               "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
-               "  </tr>\r\n"
-               "  </table>\r\n"
-			   "</form>\r\n";
+    // No args to the page: Display regular page with the form to change it
+    reply += "<h3>Set access-point credentials</h3>\r\n"
+             "This allows to configure the access-point settings of the device:<br/>\r\n"
+             "It will change how the device appears in the list of wireless networks, and the password needed to connect to it.<br/>\r\n"
+             "<br/>\r\n"
+             "These will only be taken into account after a reboot of the device.<br/>\r\n"
+             "To reboot the device, simply power it off, then on again.<br/>\r\n"
+             "<hr/>\r\n"
+    			   "<font color=red><b>!!!! DANGER ZONE !!!</b><br/>\r\n"
+    			   "If you do not remember the access-point password, and you did not setup a connection to your local wifi network, there will be no way to recover this.\r\n"
+    			   "The device will be \"bricked\" as you won't be able to connect to it from anywhere, and only re-flashing the firmware from the USB connection will fix this.</font><br/>\r\n"
+    			   "<br/>\r\n"
+    			   "<form action=\"/set_credentials_ap\">\r\n"
+             "  <table>\r\n"
+             FORM_INPUTBOX("ssid", "Access-point SSID", wifi_AP_SSID)
+             FORM_INPUTBOX("passwd", "Access-point Password", wifi_AP_Pass)
+             "  <tr>\r\n"
+             "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+             "  </tr>\r\n"
+             "  </table>\r\n"
+		         "</form>\r\n";
 
 	  reply = _BuildStandardResponsePage(reply);
   }
@@ -426,10 +595,10 @@ static void _HandleSetCredentialsAP()
   {
 	  // One of them is empty but not the other: Don't allow.
 	  // We must have a non-empty password and a non-empty access-point name.
-      reply += "<h3>Set access-point credentials</h3>\r\n"
-               "Invalid credentials: You must specify both an SSID (the name the device as it will appear in the wifi networks list), as well as a password (the password you will need to enter to connect to the device).<br/>\r\n"
-               "<br/>\r\n"
-			   "</form>\r\n";
+    reply += "<h3>Set access-point credentials</h3>\r\n"
+             "Invalid credentials: You must specify both an SSID (the name the device as it will appear in the wifi networks list), as well as a password (the password you will need to enter to connect to the device).<br/>\r\n"
+             "<br/>\r\n"
+		         "</form>\r\n";
 
 	  reply = _BuildStandardResponsePage(reply);
   }
@@ -438,15 +607,15 @@ static void _HandleSetCredentialsAP()
 	  // Both are non-empty: OK
 	  if (ssid != wifi_ST_SSID || pass != wifi_ST_Pass)
 	  {
-		wifi_AP_SSID = ssid;
-		wifi_AP_Pass = pass;
-		ESP32Flash_WriteServerInfo();
-		// New AP name will be taken into account on next device boot: That's OK
-		
-		// If we want to do it without reboot, set a flag here, and in 'loop()', if the flag is set, call 'SetupServer()'.
-		// However it will disconnect the current connection, and might be balls-breaking. IE: maybe you made a typo in the password,
-		// and you have no way to re-check it once you clicked 'Submit', and.. you'll be fucked ! you'll have to re-upload a new firmware
-		// if you had not connected to the local wifi before. So this is dangerous.
+  		wifi_AP_SSID = ssid;
+  		wifi_AP_Pass = pass;
+  		ESP32Flash_WriteServerInfo();
+  		// New AP name will be taken into account on next device boot: That's OK
+  		
+  		// If we want to do it without reboot, set a flag here, and in 'loop()', if the flag is set, call 'SetupServer()'.
+  		// However it will disconnect the current connection, and might be balls-breaking. IE: maybe you made a typo in the password,
+  		// and you have no way to re-check it once you clicked 'Submit', and.. you'll be fucked ! you'll have to re-upload a new firmware
+  		// if you had not connected to the local wifi before. So this is dangerous.
 	  }
 	  // Auto-redirect immediately back to root
 	  reply = "<html><head><meta http-equiv=\"refresh\" content=\"3; URL=/\" /></head><body></body></html>";
@@ -458,13 +627,81 @@ static void _HandleSetCredentialsAP()
 
 //----------------------------------------------------------------------------
 
+static void _HandleConfigure()
+{
+  for (uint8_t i = 0; i < server.args(); i++)
+  {
+    const String  argName = server.argName(i);
+    const int32_t argInt = server.arg(i).toInt();
+    if (argName == "mode")
+       state_mode = argInt;
+    else if (argName == "brightness")
+       state_brightness = argInt;
+    else if (argName == "speed_main")
+       state_speed_main = argInt;
+    else if (argName == "speed_eyes")
+       state_speed_eyes = argInt;
+    else if (argName == "hue_shift")
+       state_hue_shift = argInt;
+    else if (argName == "col_eye_l_r")  // Left eye
+       state_color_eye_l.r = argInt;
+    else if (argName == "col_eye_l_g")
+       state_color_eye_l.g = argInt;
+    else if (argName == "col_eye_l_b")
+       state_color_eye_l.b = argInt;
+    else if (argName == "col_eye_r_r")  // Right eye
+       state_color_eye_r.r = argInt;
+    else if (argName == "col_eye_r_g")
+       state_color_eye_r.g = argInt;
+    else if (argName == "col_eye_r_b")
+       state_color_eye_r.b = argInt;
+    else if (argName == "col_neck_r")   // Neck
+       state_color_neck.r = argInt;
+    else if (argName == "col_neck_g")
+       state_color_neck.g = argInt;
+    else if (argName == "col_neck_b")
+       state_color_neck.b = argInt;
+    else if (argName == "col_nose_r")   // Nose
+       state_color_nose.r = argInt;
+    else if (argName == "col_nose_g")
+       state_color_nose.g = argInt;
+    else if (argName == "col_nose_b")
+       state_color_nose.b = argInt;
+    else if (argName == "col_temples_r")// Temples
+       state_color_temples.r = argInt;
+    else if (argName == "col_temples_g")
+       state_color_temples.g = argInt;
+    else if (argName == "col_temples_b")
+       state_color_temples.b = argInt;
+    else if (argName == "col_mandible_r")// Mandible
+       state_color_mandible.r = argInt;
+    else if (argName == "col_mandible_g")
+       state_color_mandible.g = argInt;
+    else if (argName == "col_mandible_b")
+       state_color_mandible.b = argInt;
+    else if (argName == "col_throat_r")// Throat
+       state_color_throat.r = argInt;
+    else if (argName == "col_throat_g")
+       state_color_throat.g = argInt;
+    else if (argName == "col_throat_b")
+       state_color_throat.b = argInt;
+  }
+
+  ESP32Flash_WriteServerInfo();
+
+  // Auto-redirect immediately to the root
+  server.send(200, "text/html", "<html><head><meta http-equiv=\"refresh\" content=\"3; URL=/\" /></head><body></body></html>");
+}
+
+//----------------------------------------------------------------------------
+
 void  SetupServer()
 {
   server.stop();
   server.close(); // just in case we're reconnecting
 
   WiFi.mode(WIFI_AP_STA);
-  Serial.print("Setting up access-point");
+  Serial.println("Setting up access-point: " + wifi_AP_SSID);
   WiFi.softAP(wifi_AP_SSID, wifi_AP_Pass);
   WiFi.softAPConfig(wifi_AP_local_ip, wifi_AP_gateway, wifi_AP_subnet);
 
@@ -472,6 +709,7 @@ void  SetupServer()
   server.on("/", _HandleRoot);
   server.on("/set_credentials", _HandleSetCredentials);
   server.on("/set_credentials_ap", _HandleSetCredentialsAP);
+  server.on("/configure", _HandleConfigure);
   server.onNotFound(_HandleNotFound);
 
   // Start the server
@@ -495,8 +733,17 @@ void  ESP32Flash_Init()
   // If it's not, wipe the entire memory.
   if (EEPROM.read(0) != 0)
   {
-    for (int i = 0, stop = EEPROM.length(); i < stop; i++)
+    // Init all the beginning before the first colors to 0
+    for (int i = 0, stop = kEEPROM_col_eye_l_addr; i < stop; i++)
       EEPROM.write(i, 0);
+
+    // Init all colors to 0xFF (assumes colors appear last)
+    for (int i = kEEPROM_col_eye_l_addr, stop = EEPROM.length(); i < stop; i++)
+      EEPROM.write(i, 0xFF);
+
+    // Hand-patch a few things that must be initialized to zero:
+    EEPROM.put(kEEPROM_bright_addr, int32_t(0xFF));
+
     EEPROM.commit();
   }
 }
@@ -535,6 +782,33 @@ void  ESP32Flash_WriteServerInfo()
   EEPROM.put(kEEPROM_ST_pass_addr, eeprom_ST_pass);
   EEPROM.put(kEEPROM_AP_ssid_addr, eeprom_AP_ssid);
   EEPROM.put(kEEPROM_AP_pass_addr, eeprom_AP_pass);
+  EEPROM.put(kEEPROM_mode_addr, state_mode);
+  EEPROM.put(kEEPROM_bright_addr, state_brightness);
+  EEPROM.put(kEEPROM_speed_main_addr, state_speed_main);
+  EEPROM.put(kEEPROM_speed_eyes_addr, state_speed_eyes);
+  EEPROM.put(kEEPROM_hue_shift_addr, state_hue_shift);
+  static_assert(sizeof(state_color_eye_l.r) == 1);
+  EEPROM.put(kEEPROM_col_eye_l_addr + 0, state_color_eye_l.r);
+  EEPROM.put(kEEPROM_col_eye_l_addr + 1, state_color_eye_l.g);
+  EEPROM.put(kEEPROM_col_eye_l_addr + 2, state_color_eye_l.b);
+  EEPROM.put(kEEPROM_col_eye_r_addr + 0, state_color_eye_r.r);
+  EEPROM.put(kEEPROM_col_eye_r_addr + 1, state_color_eye_r.g);
+  EEPROM.put(kEEPROM_col_eye_r_addr + 2, state_color_eye_r.b);
+  EEPROM.put(kEEPROM_col_neck_addr + 0, state_color_neck.r);
+  EEPROM.put(kEEPROM_col_neck_addr + 1, state_color_neck.g);
+  EEPROM.put(kEEPROM_col_neck_addr + 2, state_color_neck.b);
+  EEPROM.put(kEEPROM_col_nose_addr + 0, state_color_nose.r);
+  EEPROM.put(kEEPROM_col_nose_addr + 1, state_color_nose.g);
+  EEPROM.put(kEEPROM_col_nose_addr + 2, state_color_nose.b);
+  EEPROM.put(kEEPROM_col_temples_addr + 0, state_color_temples.r);
+  EEPROM.put(kEEPROM_col_temples_addr + 1, state_color_temples.g);
+  EEPROM.put(kEEPROM_col_temples_addr + 2, state_color_temples.b);
+  EEPROM.put(kEEPROM_col_mandible_addr + 0, state_color_mandible.r);
+  EEPROM.put(kEEPROM_col_mandible_addr + 1, state_color_mandible.g);
+  EEPROM.put(kEEPROM_col_mandible_addr + 2, state_color_mandible.b);
+  EEPROM.put(kEEPROM_col_throat_addr + 0, state_color_throat.r);
+  EEPROM.put(kEEPROM_col_throat_addr + 1, state_color_throat.g);
+  EEPROM.put(kEEPROM_col_throat_addr + 2, state_color_throat.b);
   EEPROM.commit();
 }
 
@@ -562,8 +836,40 @@ void  ESP32Flash_ReadServerInfo()
 
   wifi_ST_SSID = eeprom_ST_ssid;
   wifi_ST_Pass = eeprom_ST_pass;
-  wifi_AP_SSID = eeprom_AP_ssid;
-  wifi_AP_Pass = eeprom_AP_pass;
-  if (eeprom_ST_ssid[0] != '\0') // don't check pass: allow empty password
+  if (eeprom_ST_ssid[0] != '\0') // don't check password: allow empty password
     has_wifi_credentials = true;
+  if (eeprom_AP_ssid[0] != '\0')
+  {
+    wifi_AP_SSID = eeprom_AP_ssid;
+    wifi_AP_Pass = eeprom_AP_pass;
+  }
+
+  // Read state
+  EEPROM.get(kEEPROM_mode_addr, state_mode);
+  EEPROM.get(kEEPROM_bright_addr, state_brightness);
+  EEPROM.get(kEEPROM_speed_main_addr, state_speed_main);
+  EEPROM.get(kEEPROM_speed_eyes_addr, state_speed_eyes);
+  EEPROM.get(kEEPROM_hue_shift_addr, state_hue_shift);
+  static_assert(sizeof(state_color_eye_l.r) == 1);
+  EEPROM.get(kEEPROM_col_eye_l_addr + 0, state_color_eye_l.r);
+  EEPROM.get(kEEPROM_col_eye_l_addr + 1, state_color_eye_l.g);
+  EEPROM.get(kEEPROM_col_eye_l_addr + 2, state_color_eye_l.b);
+  EEPROM.get(kEEPROM_col_eye_r_addr + 0, state_color_eye_r.r);
+  EEPROM.get(kEEPROM_col_eye_r_addr + 1, state_color_eye_r.g);
+  EEPROM.get(kEEPROM_col_eye_r_addr + 2, state_color_eye_r.b);
+  EEPROM.get(kEEPROM_col_neck_addr + 0, state_color_neck.r);
+  EEPROM.get(kEEPROM_col_neck_addr + 1, state_color_neck.g);
+  EEPROM.get(kEEPROM_col_neck_addr + 2, state_color_neck.b);
+  EEPROM.get(kEEPROM_col_nose_addr + 0, state_color_nose.r);
+  EEPROM.get(kEEPROM_col_nose_addr + 1, state_color_nose.g);
+  EEPROM.get(kEEPROM_col_nose_addr + 2, state_color_nose.b);
+  EEPROM.get(kEEPROM_col_temples_addr + 0, state_color_temples.r);
+  EEPROM.get(kEEPROM_col_temples_addr + 1, state_color_temples.g);
+  EEPROM.get(kEEPROM_col_temples_addr + 2, state_color_temples.b);
+  EEPROM.get(kEEPROM_col_mandible_addr + 0, state_color_mandible.r);
+  EEPROM.get(kEEPROM_col_mandible_addr + 1, state_color_mandible.g);
+  EEPROM.get(kEEPROM_col_mandible_addr + 2, state_color_mandible.b);
+  EEPROM.get(kEEPROM_col_throat_addr + 0, state_color_throat.r);
+  EEPROM.get(kEEPROM_col_throat_addr + 1, state_color_throat.g);
+  EEPROM.get(kEEPROM_col_throat_addr + 2, state_color_throat.b);
 }
