@@ -17,24 +17,85 @@
 // 30 LEDs total across the whole head
 
 #define NUM_LEDS_NECK       3*3
-#define NUM_LEDS_MANDIBLE_S 10
 #define NUM_LEDS_MANDIBLE_B 8
+#define NUM_LEDS_MANDIBLE_S 10
 #define NUM_LEDS_TEMPLE_R   2
 #define NUM_LEDS_TEMPLE_L   2
 #define NUM_LEDS_EYE_R      1
 #define NUM_LEDS_EYE_L      1
 #define NUM_LEDS_NOSE       2
 
-#define NUM_LEDS          (NUM_LEDS_NECK + NUM_LEDS_MANDIBLE_S + NUM_LEDS_MANDIBLE_B + NUM_LEDS_TEMPLE_R + NUM_LEDS_TEMPLE_L + NUM_LEDS_EYE_R + NUM_LEDS_EYE_L + NUM_LEDS_NOSE)
+#define NUM_LEDS          (NUM_LEDS_NECK + NUM_LEDS_MANDIBLE_B + NUM_LEDS_MANDIBLE_S + NUM_LEDS_TEMPLE_R + NUM_LEDS_TEMPLE_L + NUM_LEDS_EYE_R + NUM_LEDS_EYE_L + NUM_LEDS_NOSE)
 
 #define LED_ID_NECK       0
-#define LED_ID_MANDIBLE_S LED_ID_NECK + NUM_LEDS_NECK
-#define LED_ID_MANDIBLE_B LED_ID_MANDIBLE_S + NUM_LEDS_MANDIBLE_S
-#define LED_ID_TEMPLE_R   LED_ID_MANDIBLE_B + NUM_LEDS_MANDIBLE_B
+#define LED_ID_MANDIBLE_B LED_ID_NECK + NUM_LEDS_NECK
+#define LED_ID_MANDIBLE_S LED_ID_MANDIBLE_B + NUM_LEDS_MANDIBLE_B
+#define LED_ID_TEMPLE_R   LED_ID_MANDIBLE_S + NUM_LEDS_MANDIBLE_S
 #define LED_ID_EYE_R      LED_ID_TEMPLE_R + NUM_LEDS_TEMPLE_R
 #define LED_ID_NOSE       LED_ID_EYE_R + NUM_LEDS_EYE_R
 #define LED_ID_TEMPLE_L   LED_ID_NOSE + NUM_LEDS_NOSE
 #define LED_ID_EYE_L      LED_ID_TEMPLE_L + NUM_LEDS_TEMPLE_L
+
+//----------------------------------------------------------------------------
+// LED propagation cursor lookup used for wave animation
+
+static const float  kLEDPropagationCursors[] =
+{
+  // Neck
+  0.30f, 0.15f, 0.00f,
+  0.00f, 0.15f, 0.30f,
+  0.30f, 0.15f, 0.00f,
+
+  // Mandible: Bottom
+  0.35f, 0.425f, 0.5f, 0.575f,  0.575f, 0.5f, 0.425f, 0.35f,
+
+  // Mandible: Sides
+  0.4f, 0.45f, 0.5f, 0.55f, 0.6f,  0.6f, 0.55f, 0.5f, 0.45f, 0.4f,
+
+  // Right temple
+  0.7f, 0.8f,
+  // Right eye
+  1.0f + 0.1f,  // slightly offset compared to right eye so they're not perfectly synced
+
+  // Nose
+  0.7f, 0.7f,
+
+  // Left temple
+  0.7f, 0.8f,
+  // Left eye
+  1.0f,
+};
+static_assert(sizeof(kLEDPropagationCursors) / sizeof(kLEDPropagationCursors[0]) == NUM_LEDS);
+
+//----------------------------------------------------------------------------
+
+static const float  kLEDBrightnessFactors[] =
+{
+  // Neck
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+
+  // Mandible: Bottom
+  0.5f, 1, 1, 1,  1, 1, 1, 0.5f,
+
+  // Mandible: Sides
+  0.1f, 0.8f, 1, 1, 1,  1, 1, 1, 0.8f, 0.1f,
+
+  // Right temple
+  1, 0.8f,
+  // Right eye
+  1,
+
+  // Nose
+  1, 1,
+
+  // Left temple
+  1, 0.8f,
+  // Left eye
+  1,
+};
+static_assert(sizeof(kLEDBrightnessFactors) / sizeof(kLEDBrightnessFactors[0]) == NUM_LEDS);
 
 //----------------------------------------------------------------------------
 
@@ -48,7 +109,9 @@ IPAddress   wifi_AP_local_ip(192,168,1,1);
 IPAddress   wifi_AP_gateway(192,168,1,1);
 IPAddress   wifi_AP_subnet(255,255,255,0);
 
+//----------------------------------------------------------------------------
 // Read these from the flash
+
 bool        has_wifi_credentials = false;
 bool        has_dirty_credentials = false;
 String      wifi_ST_SSID;
@@ -56,10 +119,15 @@ String      wifi_ST_Pass;
 String		  wifi_AP_SSID;
 String		  wifi_AP_Pass;
 int32_t     state_mode = 0;
-int32_t     state_brightness = 255;
-int32_t     state_speed_main = 128;
-int32_t     state_speed_eyes = 128;
-int32_t     state_hue_shift = 0;
+int32_t     state_brightness = 255;   // [0, 255]
+int32_t     state_wave_speed = 50;    // [0, 100]
+int32_t     state_wave_min = 25;      // [0, 100]
+int32_t     state_wave_contrast = 1;  // [0, 3]
+int32_t     state_wave_tiling = 50;   // [0, 100]
+int32_t     state_base_speed = 50;    // [0, 100]
+int32_t     state_base_min = 80;      // [0, 100]
+int32_t     state_hue_shift = 0;      // [0, 255]
+int32_t     state_sat_shift = 0;      // [-255, 255]
 CRGB        state_color_eye_l = CRGB(255, 255, 255);
 CRGB        state_color_eye_r = CRGB(255, 255, 255);
 CRGB        state_color_neck = CRGB(255, 255, 255);
@@ -68,45 +136,43 @@ CRGB        state_color_temples = CRGB(255, 255, 255);
 CRGB        state_color_mandible = CRGB(255, 255, 255);
 CRGB        state_color_throat = CRGB(255, 255, 255);
 
+// Element sizes & addresses in the flash storage:
 const int   kEEPROM_ST_ssid_size = 20;  // 20 chars max
 const int   kEEPROM_ST_pass_size = 60;  // 60 chars max
 const int   kEEPROM_AP_ssid_size = 20;  // 20 chars max
 const int   kEEPROM_AP_pass_size = 60;  // 60 chars max
-const int   kEEPROM_mode_size = 4;
-const int   kEEPROM_bright_size = 4;
-const int   kEEPROM_speed_main_size = 4;
-const int   kEEPROM_speed_eyes_size = 4;
-const int   kEEPROM_hue_shift_size = 4;
-const int   kEEPROM_col_eye_l_size = 3;
-const int   kEEPROM_col_eye_r_size = 3;
-const int   kEEPROM_col_neck_size = 3;
-const int   kEEPROM_col_nose_size = 3;
-const int   kEEPROM_col_temples_size = 3;
-const int   kEEPROM_col_mandible_size = 3;
-const int   kEEPROM_col_throat_size = 3;
+const int   kEEPROM_int32_t_size = 4;
+const int   kEEPROM_col_rgb_size = 3;
 
 const int   kEEPROM_ST_ssid_addr = 1;
 const int   kEEPROM_ST_pass_addr = kEEPROM_ST_ssid_addr + kEEPROM_ST_ssid_size;
 const int   kEEPROM_AP_ssid_addr = kEEPROM_ST_pass_addr + kEEPROM_ST_pass_size;
 const int   kEEPROM_AP_pass_addr = kEEPROM_AP_ssid_addr + kEEPROM_AP_ssid_size;
 const int   kEEPROM_mode_addr = kEEPROM_AP_pass_addr + kEEPROM_AP_pass_size;
-const int   kEEPROM_bright_addr = kEEPROM_mode_addr + kEEPROM_mode_size;
-const int   kEEPROM_speed_main_addr = kEEPROM_bright_addr + kEEPROM_bright_size;
-const int   kEEPROM_speed_eyes_addr = kEEPROM_speed_main_addr + kEEPROM_speed_main_size;
-const int   kEEPROM_hue_shift_addr = kEEPROM_speed_eyes_addr + kEEPROM_speed_eyes_size;
-const int   kEEPROM_col_eye_l_addr = kEEPROM_hue_shift_addr + kEEPROM_hue_shift_size;
-const int   kEEPROM_col_eye_r_addr = kEEPROM_col_eye_l_addr + kEEPROM_col_eye_l_size;
-const int   kEEPROM_col_neck_addr = kEEPROM_col_eye_r_addr + kEEPROM_col_eye_r_size;
-const int   kEEPROM_col_nose_addr = kEEPROM_col_neck_addr + kEEPROM_col_neck_size;
-const int   kEEPROM_col_temples_addr = kEEPROM_col_nose_addr + kEEPROM_col_nose_size;
-const int   kEEPROM_col_mandible_addr = kEEPROM_col_temples_addr + kEEPROM_col_temples_size;
-const int   kEEPROM_col_throat_addr = kEEPROM_col_mandible_addr + kEEPROM_col_mandible_size;
+const int   kEEPROM_bright_addr = kEEPROM_mode_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_wave_speed_addr = kEEPROM_bright_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_wave_min_addr = kEEPROM_wave_speed_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_wave_contrast_addr = kEEPROM_wave_min_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_wave_tiling_addr = kEEPROM_wave_contrast_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_base_speed_addr = kEEPROM_wave_tiling_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_base_min_addr = kEEPROM_base_speed_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_hue_shift_addr = kEEPROM_base_min_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_sat_shift_addr = kEEPROM_hue_shift_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_col_eye_l_addr = kEEPROM_sat_shift_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_col_eye_r_addr = kEEPROM_col_eye_l_addr + kEEPROM_col_rgb_size;
+const int   kEEPROM_col_neck_addr = kEEPROM_col_eye_r_addr + kEEPROM_col_rgb_size;
+const int   kEEPROM_col_nose_addr = kEEPROM_col_neck_addr + kEEPROM_col_rgb_size;
+const int   kEEPROM_col_temples_addr = kEEPROM_col_nose_addr + kEEPROM_col_rgb_size;
+const int   kEEPROM_col_mandible_addr = kEEPROM_col_temples_addr + kEEPROM_col_rgb_size;
+const int   kEEPROM_col_throat_addr = kEEPROM_col_mandible_addr + kEEPROM_col_rgb_size;
+const int   kEEPROM_col_FIRST_addr = kEEPROM_col_eye_l_addr;
 
 const int   kEEPROM_total_size = 1 + // first byte is a key == 0
                                  kEEPROM_ST_ssid_size + kEEPROM_ST_pass_size + kEEPROM_AP_ssid_size + kEEPROM_AP_pass_size +
-                                 kEEPROM_mode_addr + kEEPROM_bright_addr + kEEPROM_speed_main_addr + kEEPROM_speed_eyes_addr + kEEPROM_hue_shift_addr +
-                                 kEEPROM_col_eye_l_addr + kEEPROM_col_eye_r_addr + kEEPROM_col_neck_addr + kEEPROM_col_nose_addr +
-                                 kEEPROM_col_temples_addr + kEEPROM_col_mandible_addr + kEEPROM_col_throat_addr;
+                                 kEEPROM_int32_t_size * 10 +
+                                 kEEPROM_col_rgb_size * 7;
+
+static_assert(kEEPROM_total_size == kEEPROM_col_throat_addr + kEEPROM_col_rgb_size);
 
 //----------------------------------------------------------------------------
 
@@ -165,9 +231,95 @@ void setup()
 
 //----------------------------------------------------------------------------
 
-CRGB  ShiftHue(const CRGB &color, int32_t shift)
+static CRGB  ShiftHS(const CRGB &color, int32_t hue_shift, int32_t sat_shift)
 {
-  return color; // Placeholder
+  if (hue_shift == 0) // Nothing to shift
+    return color;
+
+  // Convert from RGB to HSV
+  int32_t       h = 0;
+  int32_t       s = 0;
+  const int32_t v = max(max(color.r, color.g), color.b);
+  const int32_t delta = v - min(min(color.r, color.g), color.b);
+  if (delta > 0)
+  {
+    const float invDelta = 1.0f / delta;
+    float   hvalue;
+    if (v == color.r)
+      hvalue = (color.g - color.b) * invDelta + 0.0f;
+    else if (v == color.g)
+      hvalue = (color.b - color.r) * invDelta + 2.0f;
+    else
+      hvalue = (color.r - color.g) * invDelta + 4.0f;
+    if (hvalue < 0.0f)
+      hvalue += 6.0f;
+
+    h = clamp(int32_t(hvalue * 255.0f / 6.0f), 0, 255);
+    s = clamp(int32_t(delta * 255.0f / v), 0, 255);
+  }
+
+  // Shift the hue & sat
+  h = (h + hue_shift) & 0xFF;         // wrap hue
+  s = clamp(s + sat_shift, 0, 0xFF);  // clamp sat
+
+  // Convert back from HSV to RGB
+  const float delta2 = (s * v) / 255.0f;
+  const float h6 = h * 6.0f / 255.0f;
+  const float r0n = 2.0f - fabsf(h6 - 3.0f);
+  const float g0n = fabsf(h6 - 2.0f) - 1.0f;
+  const float b0n = fabsf(h6 - 4.0f) - 1.0f;
+  return CRGB(v - int32_t(delta2 * clamp(r0n, 0.0f, 1.0f)),
+              v - int32_t(delta2 * clamp(g0n, 0.0f, 1.0f)),
+              v - int32_t(delta2 * clamp(b0n, 0.0f, 1.0f)));
+}
+
+//----------------------------------------------------------------------------
+// Returns a -1, 1 noise
+
+static float  Noise(float t)
+{
+  return sinf(t *  1.000f) * 0.400f +
+         sinf(t *  3.275f) * 0.325f +
+         sinf(t *  7.241f) * 0.200f +
+         sinf(t * 18.800f) * 0.075f;
+}
+
+//----------------------------------------------------------------------------
+
+static CRGB ApplyPropagationBrightness(int ledIndex, float et, float p0, const CRGB &base)
+{
+  const float p1 = 4.0f * (state_wave_tiling / 100.0f);  // period of cursor offset, increase this to make the noise "tile" more across space
+  const float cursor = kLEDPropagationCursors[ledIndex];
+  const float ledScale = kLEDBrightnessFactors[ledIndex];
+  const float bMin = state_wave_min / 100.0f;
+  const float bMax = 1.0f;
+  const float noise01 = Noise((et + cursor * p1) * p0) * 0.5f + 0.5f;           // remap from [-1, 1] to [0, 1]
+  const float intensity_01 = clamp(noise01 * (bMax - bMin) + bMin, 0.0f, 1.0f); // remap from [0, 1] to [bMin, bMax]
+#if 1
+  const float intensity = ledScale * powf(intensity_01, state_wave_contrast + 1.0f);
+#else
+  float       intensity = intensity_01;
+  // Avoid using expensive powf()
+  switch (state_wave_contrast)
+  {
+    case  0:
+      break;
+    case  1:
+      intensity = intensity * intensity;
+      break;
+    case  2:
+      intensity = intensity * intensity * intensity;
+      break;
+    case  3:
+      intensity = intensity * intensity;
+      intensity = intensity * intensity;
+      break;
+  }
+  intensity *= ledScale;
+#endif
+  return CRGB(int32_t(base.r * intensity),
+              int32_t(base.g * intensity),
+              int32_t(base.b * intensity));
 }
 
 //----------------------------------------------------------------------------
@@ -182,18 +334,6 @@ void loop()
   const float   dt = loopTimer.dt();
   const float   et = loopTimer.elapsedTime();
 
-  static int    x = 0;
-  {
-    static float  t = 0;
-    const float   p = 0.2f;
-    t += dt;
-    if (t > p)
-    {
-      t -= p;
-      x++;
-    }
-  }
-
   // What to configure:
   // - Mode: 0=normal, 1= color debug, 3=ID cycle, 2=RGB cycle
   // - overall hue shift
@@ -206,68 +346,104 @@ void loop()
 
   if (state_mode == 0 || state_mode == 1)
   {
-    CRGB  colorNeck       = CRGB(255, 40, 10);
-    CRGB  colorMandibleS  = CRGB(255, 150, 10);
-    CRGB  colorMandibleB  = CRGB(10, 150, 255);
-    CRGB  colorTempleR    = CRGB(80, 255, 10);
-    CRGB  colorTempleL    = CRGB(80, 255, 10);
-    CRGB  colorEyeR       = CRGB(255, 0, 0);
-    CRGB  colorEyeL       = CRGB(255, 0, 0);
-    CRGB  colorBottom     = CRGB(255, 10, 150);
+    const CRGB  colorNeck       = ShiftHS(state_color_neck, state_hue_shift, state_sat_shift);
+    const CRGB  colorMandibleS  = ShiftHS(state_color_mandible, state_hue_shift, state_sat_shift);
+    const CRGB  colorMandibleB  = ShiftHS(state_color_throat, state_hue_shift, state_sat_shift);
+    const CRGB  colorTempleR    = ShiftHS(state_color_temples, state_hue_shift, state_sat_shift);
+    const CRGB  colorTempleL    = ShiftHS(state_color_temples, state_hue_shift, state_sat_shift);
+    const CRGB  colorEyeR       = ShiftHS(state_color_eye_r, state_hue_shift, state_sat_shift);
+    const CRGB  colorEyeL       = ShiftHS(state_color_eye_l, state_hue_shift, state_sat_shift);
+    const CRGB  colorBottom     = ShiftHS(state_color_nose, state_hue_shift, state_sat_shift);
 
-    if (state_mode == 0)
-    {
-      colorNeck       = ShiftHue(state_color_neck, state_hue_shift);
-      colorMandibleS  = ShiftHue(state_color_mandible, state_hue_shift);
-      colorMandibleB  = ShiftHue(state_color_throat, state_hue_shift);
-      colorTempleR    = ShiftHue(state_color_temples, state_hue_shift);
-      colorTempleL    = ShiftHue(state_color_temples, state_hue_shift);
-      colorEyeR       = ShiftHue(state_color_eye_r, state_hue_shift);
-      colorEyeL       = ShiftHue(state_color_eye_l, state_hue_shift);
-      colorBottom     = ShiftHue(state_color_nose, state_hue_shift);
+    // Animation
+    // Use a "propagation cursor" for each individual LED, starting at 0 at the base of the C3 vertebrae, and ending at the jaw extremity, and eyes
+    // Use this cursor to lookup a noise function, and propagate intensity waves across.
+    // On top of it, add a second global noise to vary intensity
 
-      // Animation
-      // Use a "propagation cursor" for each individual LED, starting at 0 at the base of the C3 vertebrae, and ending at the jaw extremity, and eyes
-      // Use this cursor to lookup a noise function, and propagate intensity waves across.
-      // On top of it, add a second global noise to vary intensity
-    }
+    // Compute global brightness level
+    const float p0 = 2.0f * state_base_speed / 100.0f;
+    const float p1 = 2.0f * state_wave_speed / 100.0f;
+    const float bMin = state_base_min / 100.0f;
+    const float bMax = 1.0f;
+    const float noise01 = Noise(et * p0) * 0.5f + 0.5f;                           // remap from [-1, 1] to [0, 1]
+    const float intensity_01 = clamp(noise01 * (bMax - bMin) + bMin, 0.0f, 1.0f); // remap from [0, 1] to [bMin, bMax]
+    FastLED.setBrightness(int32_t(state_brightness * intensity_01));
+
+#define SET_LED_WITH_PROPAGATION(__i, __base) leds[i + (__i)] = ApplyPropagationBrightness(i + (__i), et, p1, __base);
 
     for (int i = 0; i < NUM_LEDS_NECK; i++)
-      leds[i + LED_ID_NECK] = colorNeck;
+      SET_LED_WITH_PROPAGATION(LED_ID_NECK, colorNeck);
     for (int i = 0; i < NUM_LEDS_MANDIBLE_S; i++)
-      leds[i + LED_ID_MANDIBLE_S] = colorMandibleS;
+      SET_LED_WITH_PROPAGATION(LED_ID_MANDIBLE_S, colorMandibleS);
     for (int i = 0; i < NUM_LEDS_MANDIBLE_B; i++)
-      leds[i + LED_ID_MANDIBLE_B] = colorMandibleB;
+      SET_LED_WITH_PROPAGATION(LED_ID_MANDIBLE_B, colorMandibleB);
     for (int i = 0; i < NUM_LEDS_TEMPLE_R; i++)
-      leds[i + LED_ID_TEMPLE_R] = colorTempleR;
+      SET_LED_WITH_PROPAGATION(LED_ID_TEMPLE_R, colorTempleR);
     for (int i = 0; i < NUM_LEDS_EYE_R; i++)
-      leds[i + LED_ID_EYE_R] = colorEyeR;
+      SET_LED_WITH_PROPAGATION(LED_ID_EYE_R, colorEyeR);
     for (int i = 0; i < NUM_LEDS_NOSE; i++)
-      leds[i + LED_ID_NOSE] = colorBottom;
+      SET_LED_WITH_PROPAGATION(LED_ID_NOSE, colorBottom);
     for (int i = 0; i < NUM_LEDS_TEMPLE_L; i++)
-      leds[i + LED_ID_TEMPLE_L] = colorTempleL;
+      SET_LED_WITH_PROPAGATION(LED_ID_TEMPLE_L, colorTempleL);
     for (int i = 0; i < NUM_LEDS_EYE_L; i++)
-      leds[0 + LED_ID_EYE_L] = colorEyeL;
+      SET_LED_WITH_PROPAGATION(LED_ID_EYE_L, colorEyeL);
+
+#undef SET_LED_WITH_PROPAGATION
   }
-  else if (state_mode == 2)
+  else if (state_mode == 1) // Coloration per-area
   {
-    for (int i = 0; i < NUM_LEDS; i++)
-    {
-      if (i == (x % NUM_LEDS))
-        leds[i].setRGB(255, 255, 255);
-      else
-        leds[i].setRGB(255, 50, 10);
-    }
+    for (int i = 0; i < NUM_LEDS_NECK; i++)
+      leds[i + LED_ID_NECK] = CRGB(255, 40, 10);
+    for (int i = 0; i < NUM_LEDS_MANDIBLE_S; i++)
+      leds[i + LED_ID_MANDIBLE_S] = CRGB(255, 150, 10);
+    for (int i = 0; i < NUM_LEDS_MANDIBLE_B; i++)
+      leds[i + LED_ID_MANDIBLE_B] = CRGB(10, 150, 255);
+    for (int i = 0; i < NUM_LEDS_TEMPLE_R; i++)
+      leds[i + LED_ID_TEMPLE_R] = CRGB(80, 255, 10);
+    for (int i = 0; i < NUM_LEDS_EYE_R; i++)
+      leds[i + LED_ID_EYE_R] = CRGB(255, 0, 0);
+    for (int i = 0; i < NUM_LEDS_NOSE; i++)
+      leds[i + LED_ID_NOSE] = CRGB(255, 10, 150);
+    for (int i = 0; i < NUM_LEDS_TEMPLE_L; i++)
+      leds[i + LED_ID_TEMPLE_L] = CRGB(80, 255, 10);
+    for (int i = 0; i < NUM_LEDS_EYE_L; i++)
+      leds[0 + LED_ID_EYE_L] = CRGB(255, 0, 0);
   }
   else
   {
-    const float b = sinf(et) * 0.5f + 0.5f;
-    int c0 = clamp((int)(b * 255) + 1, 1, 255);
-    int c1 = clamp((int)(b * 50), 0, 255);
-    for (int i = 0; i < NUM_LEDS; i++)
+    // Increase 'x' counter every 0.2 seconds to animate the debug modes:
+    static int    x = 0;
     {
-      int key = (i + x) % NUM_LEDS;
-      leds[i].setRGB((key % 3) == 0 ? c0 : c1, ((key + 1) % 3) == 0 ? c0 : c1, ((key + 2) % 3) == 0 ? c0 : c1);
+      static float  t = 0;
+      const float   p = 0.2f;
+      t += dt;
+      if (t > p)
+      {
+        t -= p;
+        x++;
+      }
+    }
+
+    if (state_mode == 2)  // Highlight each LED individually
+    {
+      for (int i = 0; i < NUM_LEDS; i++)
+      {
+        if (i == (x % NUM_LEDS))
+          leds[i].setRGB(255, 255, 255);
+        else
+          leds[i].setRGB(255, 50, 10);
+      }
+    }
+    else  // RGB "christmas tree" + brightness variation
+    {
+      const float b = sinf(et) * 0.5f + 0.5f;
+      const int   c0 = clamp((int)(b * 255) + 1, 1, 255);
+      const int   c1 = clamp((int)(b * 50), 0, 255);
+      for (int i = 0; i < NUM_LEDS; i++)
+      {
+        int key = (i + x) % NUM_LEDS;
+        leds[i].setRGB((key % 3) == 0 ? c0 : c1, ((key + 1) % 3) == 0 ? c0 : c1, ((key + 2) % 3) == 0 ? c0 : c1);
+      }
     }
   }
 
@@ -437,10 +613,10 @@ static String  _BuildStandardResponsePage(const String &contents)
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
     "    <td><input type=\"text\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
     "  </tr>"
-#define FORM_SLIDER(__name, __title, __max, __value) \
+#define FORM_SLIDER(__name, __title, __min, __max, __value) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
-    "    <td><input type=\"range\" min=\"0\" max=\"255\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
+    "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
     "  </tr>"
 #define FORM_RGB(__name, __title, __value_r, __value_g, __value_b) \
     "  <tr>\r\n" \
@@ -455,27 +631,45 @@ static String  _BuildStandardResponsePage(const String &contents)
 static void _HandleRoot()
 {
   String  reply;
-  reply += "<b>Configure lighting:</b><br/>\r\n"
+  reply += "<h2>Configure lighting:</h2>\r\n"
            "<form action=\"/configure\">\r\n"
            "  <table>\r\n"
-           FORM_INPUTBOX("mode", "Mode", String(state_mode))
-           FORM_SLIDER("brightness", "Brightness", "255", String(state_brightness))
-           FORM_SLIDER("speed_main", "Anim speed (main)", "100", String(state_speed_main))
-           FORM_SLIDER("speed_eyes", "Anim speed (eyes)", "100", String(state_speed_eyes))
-           FORM_SLIDER("hue_shift", "Hue shift", "255", String(state_hue_shift))
+           "  <tr>\r\n"
+           "    <td><label for=\"mode\">Mode:</label></td>\r\n"
+           "    <td><select id=\"mode\" name=\"mode\">\r\n"
+           "      <option value=\"0\">Normal</option>\r\n"
+           "      <option value=\"1\">Debug regions</option>\r\n"
+           "      <option value=\"2\">Debug ID</option>\r\n"
+           "      <option value=\"3\">Debug RGB Cycle</option>\r\n"
+           "    </select></td>\r\n"
+           "  </tr>\r\n"
+           "  <tr>\r\n"
+           "    <td colspan=2 height=\"25px\"><big><b>Color control:</b></big></td>\r\n"
+           "  </tr>\r\n"
+           FORM_SLIDER("brightness", "Brightness", "0", "255", String(state_brightness))
+           FORM_SLIDER("sat_shift", "Saturation", "-255", "255", String(state_sat_shift))
+           FORM_SLIDER("hue_shift", "Hue shift", "0", "255", String(state_hue_shift))
            FORM_RGB("col_eye_l", "Left eye color", String(state_color_eye_l.r), String(state_color_eye_l.g), String(state_color_eye_l.b))
            FORM_RGB("col_eye_r", "Right eye color", String(state_color_eye_r.r), String(state_color_eye_r.g), String(state_color_eye_r.b))
-           FORM_RGB("col_neck", "Neck color", String(state_color_neck.r), String(state_color_neck.g), String(state_color_neck.b))
            FORM_RGB("col_nose", "Nose color", String(state_color_nose.r), String(state_color_nose.g), String(state_color_nose.b))
            FORM_RGB("col_temples", "Temples color", String(state_color_temples.r), String(state_color_temples.g), String(state_color_temples.b))
            FORM_RGB("col_mandible", "Mandible color", String(state_color_mandible.r), String(state_color_mandible.g), String(state_color_mandible.b))
            FORM_RGB("col_throat", "Throat color", String(state_color_throat.r), String(state_color_throat.g), String(state_color_throat.b))
+           FORM_RGB("col_neck", "Neck color", String(state_color_neck.r), String(state_color_neck.g), String(state_color_neck.b))
+           "  <tr>\r\n"
+           "    <td colspan=2 height=\"25px\"><big><b>Animation:</b></big></td>\r\n"
+           "  </tr>\r\n"
+           FORM_SLIDER("wave_speed", "Wave anim speed", "0", "100", String(state_wave_speed))
+           FORM_SLIDER("wave_min", "Wave min intensity", "0", "100", String(state_wave_min))
+           FORM_SLIDER("wave_contrast", "Wave contrast", "0", "3", String(state_wave_contrast))
+           FORM_SLIDER("wave_tiling", "Wave tiling", "0", "100", String(state_wave_tiling))
+           FORM_SLIDER("base_speed", "Base anim speed", "0", "100", String(state_base_speed))
+           FORM_SLIDER("base_min", "Base min intensity", "0", "100", String(state_base_min))
            "  <tr>\r\n"
            "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
            "  </tr>\r\n"
            "  </table>\r\n"
-           "</form>\r\n"
-           "<hr/>\r\n";
+           "</form>\r\n";
 
   reply += "<hr/>\r\n"
            "<h3>Set wifi network credentials:</h3>\r\n"
@@ -637,12 +831,22 @@ static void _HandleConfigure()
        state_mode = argInt;
     else if (argName == "brightness")
        state_brightness = argInt;
-    else if (argName == "speed_main")
-       state_speed_main = argInt;
-    else if (argName == "speed_eyes")
-       state_speed_eyes = argInt;
+    else if (argName == "wave_speed")
+       state_wave_speed = argInt;
+    else if (argName == "wave_min")
+       state_wave_min = argInt;
+    else if (argName == "wave_contrast")
+       state_wave_contrast = argInt;
+    else if (argName == "wave_tiling")
+       state_wave_tiling = argInt;
+    else if (argName == "base_speed")
+       state_base_speed = argInt;
+    else if (argName == "base_min")
+       state_base_min = argInt;
     else if (argName == "hue_shift")
        state_hue_shift = argInt;
+    else if (argName == "sat_shift")
+       state_sat_shift = argInt;
     else if (argName == "col_eye_l_r")  // Left eye
        state_color_eye_l.r = argInt;
     else if (argName == "col_eye_l_g")
@@ -734,15 +938,21 @@ void  ESP32Flash_Init()
   if (EEPROM.read(0) != 0)
   {
     // Init all the beginning before the first colors to 0
-    for (int i = 0, stop = kEEPROM_col_eye_l_addr; i < stop; i++)
+    for (int i = 0, stop = kEEPROM_col_FIRST_addr; i < stop; i++)
       EEPROM.write(i, 0);
 
     // Init all colors to 0xFF (assumes colors appear last)
-    for (int i = kEEPROM_col_eye_l_addr, stop = EEPROM.length(); i < stop; i++)
+    for (int i = kEEPROM_col_FIRST_addr, stop = EEPROM.length(); i < stop; i++)
       EEPROM.write(i, 0xFF);
 
     // Hand-patch a few things that must be initialized to zero:
     EEPROM.put(kEEPROM_bright_addr, int32_t(0xFF));
+    EEPROM.put(kEEPROM_wave_speed_addr, int32_t(50));
+    EEPROM.put(kEEPROM_wave_min_addr, int32_t(25));
+    EEPROM.put(kEEPROM_wave_contrast_addr, int32_t(1));
+    EEPROM.put(kEEPROM_wave_tiling_addr, int32_t(50));
+    EEPROM.put(kEEPROM_base_speed_addr, int32_t(50));
+    EEPROM.put(kEEPROM_base_min_addr, int32_t(80));
 
     EEPROM.commit();
   }
@@ -783,10 +993,16 @@ void  ESP32Flash_WriteServerInfo()
   EEPROM.put(kEEPROM_AP_ssid_addr, eeprom_AP_ssid);
   EEPROM.put(kEEPROM_AP_pass_addr, eeprom_AP_pass);
   EEPROM.put(kEEPROM_mode_addr, state_mode);
-  EEPROM.put(kEEPROM_bright_addr, state_brightness);
-  EEPROM.put(kEEPROM_speed_main_addr, state_speed_main);
-  EEPROM.put(kEEPROM_speed_eyes_addr, state_speed_eyes);
+
+  EEPROM.put(kEEPROM_wave_speed_addr, state_wave_speed);
+  EEPROM.put(kEEPROM_wave_min_addr, state_wave_min);
+  EEPROM.put(kEEPROM_wave_contrast_addr, state_wave_contrast);
+  EEPROM.put(kEEPROM_wave_tiling_addr, state_wave_tiling);
+  EEPROM.put(kEEPROM_base_speed_addr, state_base_speed);
+  EEPROM.put(kEEPROM_base_min_addr, state_base_min);
   EEPROM.put(kEEPROM_hue_shift_addr, state_hue_shift);
+  EEPROM.put(kEEPROM_sat_shift_addr, state_sat_shift);
+
   static_assert(sizeof(state_color_eye_l.r) == 1);
   EEPROM.put(kEEPROM_col_eye_l_addr + 0, state_color_eye_l.r);
   EEPROM.put(kEEPROM_col_eye_l_addr + 1, state_color_eye_l.g);
@@ -847,9 +1063,14 @@ void  ESP32Flash_ReadServerInfo()
   // Read state
   EEPROM.get(kEEPROM_mode_addr, state_mode);
   EEPROM.get(kEEPROM_bright_addr, state_brightness);
-  EEPROM.get(kEEPROM_speed_main_addr, state_speed_main);
-  EEPROM.get(kEEPROM_speed_eyes_addr, state_speed_eyes);
+  EEPROM.get(kEEPROM_wave_speed_addr, state_wave_speed);
+  EEPROM.get(kEEPROM_wave_min_addr, state_wave_min);
+  EEPROM.get(kEEPROM_wave_contrast_addr, state_wave_contrast);
+  EEPROM.get(kEEPROM_wave_tiling_addr, state_wave_tiling);
+  EEPROM.get(kEEPROM_base_speed_addr, state_base_speed);
+  EEPROM.get(kEEPROM_base_min_addr, state_base_min);
   EEPROM.get(kEEPROM_hue_shift_addr, state_hue_shift);
+  EEPROM.get(kEEPROM_sat_shift_addr, state_sat_shift);
   static_assert(sizeof(state_color_eye_l.r) == 1);
   EEPROM.get(kEEPROM_col_eye_l_addr + 0, state_color_eye_l.r);
   EEPROM.get(kEEPROM_col_eye_l_addr + 1, state_color_eye_l.g);
