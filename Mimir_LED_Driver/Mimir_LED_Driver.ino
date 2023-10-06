@@ -344,7 +344,7 @@ void loop()
 
   FastLED.setBrightness(state_brightness);
 
-  if (state_mode == 0 || state_mode == 1)
+  if (state_mode == 0)
   {
     const CRGB  colorNeck       = ShiftHS(state_color_neck, state_hue_shift, state_sat_shift);
     const CRGB  colorMandibleS  = ShiftHS(state_color_mandible, state_hue_shift, state_sat_shift);
@@ -370,7 +370,6 @@ void loop()
     FastLED.setBrightness(int32_t(state_brightness * intensity_01));
 
 #define SET_LED_WITH_PROPAGATION(__i, __base) leds[i + (__i)] = ApplyPropagationBrightness(i + (__i), et, p1, __base);
-
     for (int i = 0; i < NUM_LEDS_NECK; i++)
       SET_LED_WITH_PROPAGATION(LED_ID_NECK, colorNeck);
     for (int i = 0; i < NUM_LEDS_MANDIBLE_S; i++)
@@ -387,7 +386,6 @@ void loop()
       SET_LED_WITH_PROPAGATION(LED_ID_TEMPLE_L, colorTempleL);
     for (int i = 0; i < NUM_LEDS_EYE_L; i++)
       SET_LED_WITH_PROPAGATION(LED_ID_EYE_L, colorEyeL);
-
 #undef SET_LED_WITH_PROPAGATION
   }
   else if (state_mode == 1) // Coloration per-area
@@ -463,8 +461,7 @@ void  ConnectToWiFi()
   if (!has_wifi_credentials)  // Nothing to connect to if we don't have any credentials
     return;
 
-  Serial.println("Connecting to wifi...");
-  Serial.println("Connecting to " + wifi_ST_SSID);
+  Serial.println("Connecting to WiFi: " + wifi_ST_SSID);
 
   WiFi.begin(wifi_ST_SSID, wifi_ST_Pass);
 }
@@ -488,10 +485,8 @@ void  WaitForWiFi(int maxMs)
 
   if (WiFi.status() == WL_CONNECTED)
   {
-    Serial.print("WiFi connected to ");
-    Serial.println(wifi_ST_SSID);
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
+    Serial.println("WiFi connected to " + wifi_ST_SSID);
+    Serial.println("IP address: " + WiFi.localIP());
   }
 }
 
@@ -518,10 +513,8 @@ void  EnsureWiFiConnected()
   else if (MsSinceConnected != 0) // was previously not connected
   {
     MsSinceConnected = 0;
-    Serial.println("");
-    Serial.print("WiFi connected to ");
-    Serial.println(wifi_ST_SSID);
-    Serial.println("IP address: ");
+    Serial.println("WiFi connected to " + wifi_ST_SSID);
+    Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
   }
 }
@@ -558,7 +551,7 @@ void  WifiServerLoop()
 //
 //----------------------------------------------------------------------------
 
-#define FONT_OTAG_CODE  "<font class=code>"
+#define FONT_OTAG_CODE  "<font class=\"code\">"
 
 static String  _BuildStandardResponsePage(const String &contents)
 {
@@ -583,19 +576,19 @@ static String  _BuildStandardResponsePage(const String &contents)
            "Requests since startup: ";
   reply += ++reqId;
   reply += "<br/>\r\n"
-           "Chip ID: <font class=\"code\">";
+           "Chip ID: " FONT_OTAG_CODE;
   reply += String(chipId, HEX);
   reply += "</font>";
   reply += "<br/>\r\n"
-           "MAC Address: <font class=\"code\">";
+           "MAC Address: " FONT_OTAG_CODE;
   reply += WiFi.macAddress() + "</font>";
 
   if (WiFi.status() == WL_CONNECTED)
   {
     reply += "<br/>\r\n"
-             "IP Address: ";
+             "IP Address: " FONT_OTAG_CODE;
     reply += WiFi.localIP().toString();
-    reply += "<br/>\r\n"
+    reply += "</font><br/>\r\n"
              "Signal strength: ";
     reply += WiFi.RSSI();
     reply += " dB<br/>\r\n";
@@ -904,8 +897,11 @@ void  SetupServer()
   server.stop();
   server.close(); // just in case we're reconnecting
 
+  // Log SSID & Password of local access-point in case it gets set and forgotten, and the local wifi network access hasn't been setup
+  // In that case, there's no way to recover it, except by wathing the serial output through the USB connection, and seeing this print:
+  Serial.println("Setting up access-point: \"" + wifi_AP_SSID + "\", Password: \"" + wifi_AP_Pass + "\"");
+
   WiFi.mode(WIFI_AP_STA);
-  Serial.println("Setting up access-point: " + wifi_AP_SSID);
   WiFi.softAP(wifi_AP_SSID, wifi_AP_Pass);
   WiFi.softAPConfig(wifi_AP_local_ip, wifi_AP_gateway, wifi_AP_subnet);
 
@@ -992,7 +988,9 @@ void  ESP32Flash_WriteServerInfo()
   EEPROM.put(kEEPROM_ST_pass_addr, eeprom_ST_pass);
   EEPROM.put(kEEPROM_AP_ssid_addr, eeprom_AP_ssid);
   EEPROM.put(kEEPROM_AP_pass_addr, eeprom_AP_pass);
+
   EEPROM.put(kEEPROM_mode_addr, state_mode);
+  EEPROM.put(kEEPROM_bright_addr, state_brightness);
 
   EEPROM.put(kEEPROM_wave_speed_addr, state_wave_speed);
   EEPROM.put(kEEPROM_wave_min_addr, state_wave_min);
