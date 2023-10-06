@@ -606,10 +606,25 @@ static String  _BuildStandardResponsePage(const String &contents)
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
     "    <td><input type=\"text\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
     "  </tr>"
+#define FORM_PASSWORD(__name, __title, __value) \
+    "  <tr>\r\n" \
+    "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
+    "    <td><input type=\"password\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"><input type=\"checkbox\" onclick=\"togglePassword_" __name "()\">Show\r\n" \
+    "      <script>function togglePassword_" __name "() { var x = document.getElementById(\"" __name "\"); if (x.type == \"password\") x.type = \"text\"; else x.type = \"password\"; }</script>" \
+    "    </td>" \
+    "  </tr>"
 #define FORM_SLIDER(__name, __title, __min, __max, __value) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
     "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
+    "  </tr>"
+#define FORM_SLIDER_RST(__name, __title, __min, __max, __value, __default) \
+    "  <tr>\r\n" \
+    "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
+    "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\">&nbsp;\r\n" \
+    "      <button type=\"button\" style=\"height:20px;\" onclick=\"reset_" __name "()\">Reset</button>\r\n" \
+    "      <script>function reset_" __name "() { var x = document.getElementById(\"" __name "\"); x.value = \""  __default  "\"; }</script>" \
+    "    </td>\r\n" \
     "  </tr>"
 #define FORM_RGB(__name, __title, __value_r, __value_g, __value_b) \
     "  <tr>\r\n" \
@@ -625,23 +640,23 @@ static void _HandleRoot()
 {
   String  reply;
   reply += "<h2>Configure lighting:</h2>\r\n"
-           "<form action=\"/configure\">\r\n"
+           "<form action=\"/configure\" id=\"configForm\">\r\n"
            "  <table>\r\n"
            "  <tr>\r\n"
            "    <td><label for=\"mode\">Mode:</label></td>\r\n"
            "    <td><select id=\"mode\" name=\"mode\">\r\n"
            "      <option value=\"0\">Normal</option>\r\n"
-           "      <option value=\"1\">Debug regions</option>\r\n"
-           "      <option value=\"2\">Debug ID</option>\r\n"
-           "      <option value=\"3\">Debug RGB Cycle</option>\r\n"
+           "      <option value=\"1\"" + String(state_mode == 1 ? " selected" : "") + ">Debug regions</option>\r\n"
+           "      <option value=\"2\"" + String(state_mode == 2 ? " selected" : "") + ">Debug ID</option>\r\n"
+           "      <option value=\"3\"" + String(state_mode == 3 ? " selected" : "") + ">Debug RGB Cycle</option>\r\n"
            "    </select></td>\r\n"
            "  </tr>\r\n"
            "  <tr>\r\n"
            "    <td colspan=2 height=\"25px\"><big><b>Color control:</b></big></td>\r\n"
            "  </tr>\r\n"
-           FORM_SLIDER("brightness", "Brightness", "0", "255", String(state_brightness))
-           FORM_SLIDER("sat_shift", "Saturation", "-255", "255", String(state_sat_shift))
-           FORM_SLIDER("hue_shift", "Hue shift", "0", "255", String(state_hue_shift))
+           FORM_SLIDER_RST("brightness", "Brightness", "0", "255", String(state_brightness), "255")
+           FORM_SLIDER_RST("sat_shift", "Saturation", "-255", "255", String(state_sat_shift), "0")
+           FORM_SLIDER_RST("hue_shift", "Hue shift", "0", "255", String(state_hue_shift), "0")
            FORM_RGB("col_eye_l", "Left eye color", String(state_color_eye_l.r), String(state_color_eye_l.g), String(state_color_eye_l.b))
            FORM_RGB("col_eye_r", "Right eye color", String(state_color_eye_r.r), String(state_color_eye_r.g), String(state_color_eye_r.b))
            FORM_RGB("col_nose", "Nose color", String(state_color_nose.r), String(state_color_nose.g), String(state_color_nose.b))
@@ -659,25 +674,47 @@ static void _HandleRoot()
            FORM_SLIDER("base_speed", "Base anim speed", "0", "100", String(state_base_speed))
            FORM_SLIDER("base_min", "Base min intensity", "0", "100", String(state_base_min))
            "  <tr>\r\n"
-           "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+           "    <td colspan=2><input type=\"submit\" value=\"Submit\" id=\"submit\">&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
            "  </tr>\r\n"
            "  </table>\r\n"
            "</form>\r\n";
 
   reply += "<hr/>\r\n"
-           "<h3>Set wifi network credentials:</h3>\r\n"
-           "This will allow the device to connect to your local wifi, and access this page through your wifi network without the need to connect to the access-point.<br/><br/>\r\n"
-           "<form action=\"/set_credentials\">\r\n"
+           "<h2>Set WiFi network credentials:</h2>\r\n"
+           "This will allow the device to connect to your local WiFi, and access this page through your WiFi network without the need to connect to the access-point.<br/><br/>\r\n"
+           "<form action=\"/set_credentials\" id=\"wifiForm\">\r\n"
            "  <table>\r\n"
            FORM_INPUTBOX("ssid", "WiFi SSID", wifi_ST_SSID)
-           FORM_INPUTBOX("passwd", "WiFi Password", wifi_ST_Pass)
+           FORM_PASSWORD("passwd", "WiFi Password", wifi_ST_Pass)
            "  <tr>\r\n"
-           "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+           "    <td colspan=2><input type=\"submit\" value=\"Submit\">&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
            "  </tr>\r\n"
            "  </table>\r\n"
            "</form>\r\n"
     		   "<hr/>\r\n"
-    		   "<a href=\"/set_credentials_ap\">Change access-point settings</a><br/>\r\n";
+    		   "<a href=\"/set_credentials_ap\">Change access-point settings</a><br/>\r\n"
+           "<script>\r\n"
+           "function postFormNoRefresh(e)\r\n"
+           "{\r\n"
+           "  const form = e.target;\r\n"
+           "  var x = form.getElementsByClassName(\"statusCtrl\")[0];\r\n"
+           "  x.innerHTML = \"...\";\r\n"
+           "  e.preventDefault();\r\n"
+           "  fetch(form.action, {\r\n"
+           "    method: \"POST\",\r\n"
+           "    body: new FormData(form),\r\n"
+           "  })\r\n"
+           "  .then((res) => x.innerHTML = \"OK\")\r\n"
+           "  .catch((err) => {\r\n"
+           "    console.log(err.message)\r\n"
+           "    x.innerHTML = \"Query Failed\";\r\n"
+           "  });\r\n"
+           "}\r\n"
+           "document.addEventListener(\"DOMContentLoaded\", () => {\r\n"
+           "  document.getElementById(\"configForm\").addEventListener(\"submit\", postFormNoRefresh);\r\n"
+           "  document.getElementById(\"wifiForm\").addEventListener(\"submit\", postFormNoRefresh);\r\n"
+           "});\r\n"
+           "</script>\r\n";
 
   server.send(200, "text/html", _BuildStandardResponsePage(reply));
 }
@@ -755,7 +792,7 @@ static void _HandleSetCredentialsAP()
   if (!hasSSID && !hasPass)
   {
     // No args to the page: Display regular page with the form to change it
-    reply += "<h3>Set access-point credentials</h3>\r\n"
+    reply += "<h2>Set access-point credentials</h2>\r\n"
              "This allows to configure the access-point settings of the device:<br/>\r\n"
              "It will change how the device appears in the list of wireless networks, and the password needed to connect to it.<br/>\r\n"
              "<br/>\r\n"
@@ -763,13 +800,13 @@ static void _HandleSetCredentialsAP()
              "To reboot the device, simply power it off, then on again.<br/>\r\n"
              "<hr/>\r\n"
     			   "<font color=red><b>!!!! DANGER ZONE !!!</b><br/>\r\n"
-    			   "If you do not remember the access-point password, and you did not setup a connection to your local wifi network, there will be no way to recover this.\r\n"
+    			   "If you do not remember the access-point password, and you did not setup a connection to your local WiFi network, there will be no way to recover this.\r\n"
     			   "The device will be \"bricked\" as you won't be able to connect to it from anywhere, and only re-flashing the firmware from the USB connection will fix this.</font><br/>\r\n"
     			   "<br/>\r\n"
     			   "<form action=\"/set_credentials_ap\">\r\n"
              "  <table>\r\n"
              FORM_INPUTBOX("ssid", "Access-point SSID", wifi_AP_SSID)
-             FORM_INPUTBOX("passwd", "Access-point Password", wifi_AP_Pass)
+             FORM_PASSWORD("passwd", "Access-point Password", wifi_AP_Pass)
              "  <tr>\r\n"
              "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
              "  </tr>\r\n"
@@ -783,7 +820,7 @@ static void _HandleSetCredentialsAP()
 	  // One of them is empty but not the other: Don't allow.
 	  // We must have a non-empty password and a non-empty access-point name.
     reply += "<h3>Set access-point credentials</h3>\r\n"
-             "Invalid credentials: You must specify both an SSID (the name the device as it will appear in the wifi networks list), as well as a password (the password you will need to enter to connect to the device).<br/>\r\n"
+             "Invalid credentials: You must specify both an SSID (the name the device as it will appear in the WiFi networks list), as well as a password (the password you will need to enter to connect to the device).<br/>\r\n"
              "<br/>\r\n"
 		         "</form>\r\n";
 
