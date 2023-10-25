@@ -17,12 +17,12 @@ public:
 
   int       dtMS() const { return m_DtMS; }
   float     dt() const { return m_DtMS * 1.0e-3f; }
-  float     elapsedTime() const { return m_ElapsedTime; }
+  float     elapsedTime() const { return (float)m_ElapsedTime; }
 
 private:
   int       m_DtMS = 0;
   long int  m_PrevMS = -1;
-  float     m_ElapsedTime = 0;
+  double    m_ElapsedTime = 0;
 };
 
 //----------------------------------------------------------------------------

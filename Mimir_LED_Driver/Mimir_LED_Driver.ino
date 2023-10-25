@@ -1,5 +1,8 @@
 //----------------------------------------------------------------------------
 // TOOLS>BOARD SHOULD BE SET TO EITHER "ESP32 Dev Module" OR "ESP32-WROOM-DA Module"
+// Troubleshooting: If the board reboots in a loop with SW_RESET, make sure:
+//  - 'Flash Mode' is set to 'DIO'
+//  - 'Flash Speed' is set to '40MHz'
 
 #define FASTLED_ALL_PINS_HARDWARE_SPI
 #define FASTLED_ALLOW_INTERRUPTS 0
@@ -128,6 +131,7 @@ int32_t     state_base_speed = 50;    // [0, 100]
 int32_t     state_base_min = 80;      // [0, 100]
 int32_t     state_hue_shift = 0;      // [0, 255]
 int32_t     state_sat_shift = 0;      // [-255, 255]
+int32_t     state_hue_speed = 50;      // [0, 100]
 CRGB        state_color_eye_l = CRGB(255, 255, 255);
 CRGB        state_color_eye_r = CRGB(255, 255, 255);
 CRGB        state_color_neck = CRGB(255, 255, 255);
@@ -158,7 +162,8 @@ const int   kEEPROM_base_speed_addr = kEEPROM_wave_tiling_addr + kEEPROM_int32_t
 const int   kEEPROM_base_min_addr = kEEPROM_base_speed_addr + kEEPROM_int32_t_size;
 const int   kEEPROM_hue_shift_addr = kEEPROM_base_min_addr + kEEPROM_int32_t_size;
 const int   kEEPROM_sat_shift_addr = kEEPROM_hue_shift_addr + kEEPROM_int32_t_size;
-const int   kEEPROM_col_eye_l_addr = kEEPROM_sat_shift_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_hue_speed_addr = kEEPROM_sat_shift_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_col_eye_l_addr = kEEPROM_hue_speed_addr + kEEPROM_int32_t_size;
 const int   kEEPROM_col_eye_r_addr = kEEPROM_col_eye_l_addr + kEEPROM_col_rgb_size;
 const int   kEEPROM_col_neck_addr = kEEPROM_col_eye_r_addr + kEEPROM_col_rgb_size;
 const int   kEEPROM_col_nose_addr = kEEPROM_col_neck_addr + kEEPROM_col_rgb_size;
@@ -169,7 +174,7 @@ const int   kEEPROM_col_FIRST_addr = kEEPROM_col_eye_l_addr;
 
 const int   kEEPROM_total_size = 1 + // first byte is a key == 0
                                  kEEPROM_ST_ssid_size + kEEPROM_ST_pass_size + kEEPROM_AP_ssid_size + kEEPROM_AP_pass_size +
-                                 kEEPROM_int32_t_size * 10 +
+                                 kEEPROM_int32_t_size * 11 +
                                  kEEPROM_col_rgb_size * 7;
 
 static_assert(kEEPROM_total_size == kEEPROM_col_throat_addr + kEEPROM_col_rgb_size);
@@ -233,7 +238,7 @@ void setup()
 
 static CRGB  ShiftHS(const CRGB &color, int32_t hue_shift, int32_t sat_shift)
 {
-  if (hue_shift == 0) // Nothing to shift
+  if (hue_shift == 0 && sat_shift == 0) // Nothing to shift
     return color;
 
   // Convert from RGB to HSV
@@ -335,7 +340,7 @@ void loop()
   const float   et = loopTimer.elapsedTime();
 
   // What to configure:
-  // - Mode: 0=normal, 1= color debug, 3=ID cycle, 2=RGB cycle
+  // - Mode: 0=normal, 1=hue cycle, 2=debug zones, 3=debug ID cycle, 3=debug RGB cycle
   // - overall hue shift
   // - 5 inner colors
   // - 2 eye colors
@@ -344,16 +349,20 @@ void loop()
 
   FastLED.setBrightness(state_brightness);
 
-  if (state_mode == 0)
+  if (state_mode == 0 || state_mode == 1)
   {
-    const CRGB  colorNeck       = ShiftHS(state_color_neck, state_hue_shift, state_sat_shift);
-    const CRGB  colorMandibleS  = ShiftHS(state_color_mandible, state_hue_shift, state_sat_shift);
-    const CRGB  colorMandibleB  = ShiftHS(state_color_throat, state_hue_shift, state_sat_shift);
-    const CRGB  colorTempleR    = ShiftHS(state_color_temples, state_hue_shift, state_sat_shift);
-    const CRGB  colorTempleL    = ShiftHS(state_color_temples, state_hue_shift, state_sat_shift);
-    const CRGB  colorEyeR       = ShiftHS(state_color_eye_r, state_hue_shift, state_sat_shift);
-    const CRGB  colorEyeL       = ShiftHS(state_color_eye_l, state_hue_shift, state_sat_shift);
-    const CRGB  colorBottom     = ShiftHS(state_color_nose, state_hue_shift, state_sat_shift);
+    const float   hue_speed = (state_mode == 1) ? 0.5f * state_hue_speed / 100.0f : 0.0f;
+    const int32_t hue_shift_anim = int32_t(fmodf(hue_speed * et, 1.0f) * 255.0f);
+    const int32_t hue_shift = (state_hue_shift + hue_shift_anim) % 256;
+
+    const CRGB  colorNeck       = ShiftHS(state_color_neck, hue_shift, state_sat_shift);
+    const CRGB  colorMandibleS  = ShiftHS(state_color_mandible, hue_shift, state_sat_shift);
+    const CRGB  colorMandibleB  = ShiftHS(state_color_throat, hue_shift, state_sat_shift);
+    const CRGB  colorTempleR    = ShiftHS(state_color_temples, hue_shift, state_sat_shift);
+    const CRGB  colorTempleL    = ShiftHS(state_color_temples, hue_shift, state_sat_shift);
+    const CRGB  colorEyeR       = ShiftHS(state_color_eye_r, hue_shift, state_sat_shift);
+    const CRGB  colorEyeL       = ShiftHS(state_color_eye_l, hue_shift, state_sat_shift);
+    const CRGB  colorBottom     = ShiftHS(state_color_nose, hue_shift, state_sat_shift);
 
     // Animation
     // Use a "propagation cursor" for each individual LED, starting at 0 at the base of the C3 vertebrae, and ending at the jaw extremity, and eyes
@@ -388,7 +397,7 @@ void loop()
       SET_LED_WITH_PROPAGATION(LED_ID_EYE_L, colorEyeL);
 #undef SET_LED_WITH_PROPAGATION
   }
-  else if (state_mode == 1) // Coloration per-area
+  else if (state_mode == 2) // Coloration per-area
   {
     for (int i = 0; i < NUM_LEDS_NECK; i++)
       leds[i + LED_ID_NECK] = CRGB(255, 40, 10);
@@ -422,7 +431,7 @@ void loop()
       }
     }
 
-    if (state_mode == 2)  // Highlight each LED individually
+    if (state_mode == 3)  // Highlight each LED individually
     {
       for (int i = 0; i < NUM_LEDS; i++)
       {
@@ -566,7 +575,7 @@ static String  _BuildStandardResponsePage(const String &contents)
            "td.header { color: #AAA; background-color: #505050; }\r\n"
            ".code { font-family: Consolas, Courier; background:#EEE; }\r\n"
            "</style></head><body>\r\n"
-           "<h1>Mimir server</h1>\r\n"
+           "<h1>" + wifi_AP_SSID + "</h1>\r\n"
            "<hr/>\r\n";
   reply += contents;
   reply += "<hr/>\r\n"
@@ -646,9 +655,10 @@ static void _HandleRoot()
            "    <td><label for=\"mode\">Mode:</label></td>\r\n"
            "    <td><select id=\"mode\" name=\"mode\">\r\n"
            "      <option value=\"0\">Normal</option>\r\n"
-           "      <option value=\"1\"" + String(state_mode == 1 ? " selected" : "") + ">Debug regions</option>\r\n"
-           "      <option value=\"2\"" + String(state_mode == 2 ? " selected" : "") + ">Debug ID</option>\r\n"
-           "      <option value=\"3\"" + String(state_mode == 3 ? " selected" : "") + ">Debug RGB Cycle</option>\r\n"
+           "      <option value=\"1\"" + String(state_mode == 1 ? " selected" : "") + ">Hue cycle</option>\r\n"
+           "      <option value=\"2\"" + String(state_mode == 2 ? " selected" : "") + ">Debug regions</option>\r\n"
+           "      <option value=\"3\"" + String(state_mode == 3 ? " selected" : "") + ">Debug ID</option>\r\n"
+           "      <option value=\"4\"" + String(state_mode == 4 ? " selected" : "") + ">Debug RGB Cycle</option>\r\n"
            "    </select></td>\r\n"
            "  </tr>\r\n"
            "  <tr>\r\n"
@@ -673,6 +683,7 @@ static void _HandleRoot()
            FORM_SLIDER("wave_tiling", "Wave tiling", "0", "100", String(state_wave_tiling))
            FORM_SLIDER("base_speed", "Base anim speed", "0", "100", String(state_base_speed))
            FORM_SLIDER("base_min", "Base min intensity", "0", "100", String(state_base_min))
+           FORM_SLIDER("hue_speed", "Hue shift speed", "0", "100", String(state_hue_speed))
            "  <tr>\r\n"
            "    <td colspan=2><input type=\"submit\" value=\"Submit\" id=\"submit\">&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
            "  </tr>\r\n"
@@ -877,6 +888,8 @@ static void _HandleConfigure()
        state_hue_shift = argInt;
     else if (argName == "sat_shift")
        state_sat_shift = argInt;
+    else if (argName == "hue_speed")
+       state_hue_speed = argInt;
     else if (argName == "col_eye_l_r")  // Left eye
        state_color_eye_l.r = argInt;
     else if (argName == "col_eye_l_g")
@@ -986,6 +999,7 @@ void  ESP32Flash_Init()
     EEPROM.put(kEEPROM_wave_tiling_addr, int32_t(50));
     EEPROM.put(kEEPROM_base_speed_addr, int32_t(50));
     EEPROM.put(kEEPROM_base_min_addr, int32_t(80));
+    EEPROM.put(kEEPROM_hue_speed_addr, int32_t(50));
 
     EEPROM.commit();
   }
@@ -1037,6 +1051,7 @@ void  ESP32Flash_WriteServerInfo()
   EEPROM.put(kEEPROM_base_min_addr, state_base_min);
   EEPROM.put(kEEPROM_hue_shift_addr, state_hue_shift);
   EEPROM.put(kEEPROM_sat_shift_addr, state_sat_shift);
+  EEPROM.put(kEEPROM_hue_speed_addr, state_hue_speed);
 
   static_assert(sizeof(state_color_eye_l.r) == 1);
   EEPROM.put(kEEPROM_col_eye_l_addr + 0, state_color_eye_l.r);
@@ -1106,6 +1121,7 @@ void  ESP32Flash_ReadServerInfo()
   EEPROM.get(kEEPROM_base_min_addr, state_base_min);
   EEPROM.get(kEEPROM_hue_shift_addr, state_hue_shift);
   EEPROM.get(kEEPROM_sat_shift_addr, state_sat_shift);
+  EEPROM.get(kEEPROM_hue_speed_addr, state_hue_speed);
   static_assert(sizeof(state_color_eye_l.r) == 1);
   EEPROM.get(kEEPROM_col_eye_l_addr + 0, state_color_eye_l.r);
   EEPROM.get(kEEPROM_col_eye_l_addr + 1, state_color_eye_l.g);
