@@ -4,8 +4,8 @@
 //  - 'Flash Mode' is set to 'DIO'
 //  - 'Flash Speed' is set to '40MHz'
 
-#define FASTLED_ALL_PINS_HARDWARE_SPI
-#define FASTLED_ALLOW_INTERRUPTS 0
+//#define FASTLED_ALL_PINS_HARDWARE_SPI
+//#define FASTLED_ALLOW_INTERRUPTS 0
 #include <FastLED.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -14,6 +14,10 @@
 
 #include "HWPinConfig.h"
 #include "Helpers.h"
+
+//#define ENABLE_DEBUG_ID
+//#define BUGGY_HW  // Uncomment for original prototype with the messed-up internal LED strip
+#define HARWARE_NAME  "Mimir"
 
 //----------------------------------------------------------------------------
 // LED count
@@ -122,6 +126,7 @@ String      wifi_ST_Pass;
 String		  wifi_AP_SSID;
 String		  wifi_AP_Pass;
 int32_t     state_mode = 0;
+int32_t     state_debug_id = 0;
 int32_t     state_brightness = 255;   // [0, 255]
 int32_t     state_wave_speed = 50;    // [0, 100]
 int32_t     state_wave_min = 25;      // [0, 100]
@@ -153,7 +158,8 @@ const int   kEEPROM_ST_pass_addr = kEEPROM_ST_ssid_addr + kEEPROM_ST_ssid_size;
 const int   kEEPROM_AP_ssid_addr = kEEPROM_ST_pass_addr + kEEPROM_ST_pass_size;
 const int   kEEPROM_AP_pass_addr = kEEPROM_AP_ssid_addr + kEEPROM_AP_ssid_size;
 const int   kEEPROM_mode_addr = kEEPROM_AP_pass_addr + kEEPROM_AP_pass_size;
-const int   kEEPROM_bright_addr = kEEPROM_mode_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_debug_id_addr = kEEPROM_mode_addr + kEEPROM_int32_t_size;
+const int   kEEPROM_bright_addr = kEEPROM_debug_id_addr + kEEPROM_int32_t_size;
 const int   kEEPROM_wave_speed_addr = kEEPROM_bright_addr + kEEPROM_int32_t_size;
 const int   kEEPROM_wave_min_addr = kEEPROM_wave_speed_addr + kEEPROM_int32_t_size;
 const int   kEEPROM_wave_contrast_addr = kEEPROM_wave_min_addr + kEEPROM_int32_t_size;
@@ -174,7 +180,7 @@ const int   kEEPROM_col_FIRST_addr = kEEPROM_col_eye_l_addr;
 
 const int   kEEPROM_total_size = 1 + // first byte is a key == 0
                                  kEEPROM_ST_ssid_size + kEEPROM_ST_pass_size + kEEPROM_AP_ssid_size + kEEPROM_AP_pass_size +
-                                 kEEPROM_int32_t_size * 11 +
+                                 kEEPROM_int32_t_size * 12 +
                                  kEEPROM_col_rgb_size * 7;
 
 static_assert(kEEPROM_total_size == kEEPROM_col_throat_addr + kEEPROM_col_rgb_size);
@@ -183,6 +189,8 @@ static_assert(kEEPROM_total_size == kEEPROM_col_throat_addr + kEEPROM_col_rgb_si
 
 void setup()
 {
+//  setCpuFrequencyMhz(160);
+
   pinMode(PIN_OUT_WS2812, OUTPUT);
 
   for (int i = 0; i < NUM_LEDS; i++)
@@ -217,7 +225,7 @@ void setup()
   }
 
   // Init default AP name before reading from flash
-  wifi_AP_SSID = "Mimir_" + String(chipId, HEX);
+  wifi_AP_SSID = HARWARE_NAME "_" + String(chipId, HEX);
   wifi_AP_Pass = "0123456789";
 
   // Read the AP name & pass + server's IP & port we recorded from the previous runs to instantly connect to
@@ -329,6 +337,21 @@ static CRGB ApplyPropagationBrightness(int ledIndex, float et, float p0, const C
 
 //----------------------------------------------------------------------------
 
+#if defined(BUGGY_HW)
+void  refresh_LEDs()
+{
+  const CRGB  color = ShiftHS(state_color_neck, state_hue_shift, state_sat_shift);
+
+  for (int i = 0; i < NUM_LEDS; i++)
+    leds[i] = color;
+
+  FastLED.setBrightness(state_brightness);
+  FastLED.show();
+}
+#endif
+
+//----------------------------------------------------------------------------
+
 void loop()
 {
   loopTimer.tick();
@@ -339,8 +362,9 @@ void loop()
   const float   dt = loopTimer.dt();
   const float   et = loopTimer.elapsedTime();
 
+#if !defined(BUGGY_HW)
   // What to configure:
-  // - Mode: 0=normal, 1=hue cycle, 2=debug zones, 3=debug ID cycle, 3=debug RGB cycle
+  // - Mode: 0=normal, 1=hue cycle, 2=debug zones, 3=debug ID, 4=debug ID cycle, 5=debug RGB cycle
   // - overall hue shift
   // - 5 inner colors
   // - 2 eye colors
@@ -431,11 +455,12 @@ void loop()
       }
     }
 
-    if (state_mode == 3)  // Highlight each LED individually
+    if (state_mode == 3 || state_mode == 4)  // Highlight specific LED
     {
+      const int led_to_highlight = (state_mode == 3) ? state_debug_id : (x % NUM_LEDS);
       for (int i = 0; i < NUM_LEDS; i++)
       {
-        if (i == (x % NUM_LEDS))
+        if (i == led_to_highlight)
           leds[i].setRGB(255, 255, 255);
         else
           leds[i].setRGB(255, 50, 10);
@@ -455,8 +480,9 @@ void loop()
   }
 
   FastLED.show();
+#endif
 
-  delay(10);
+  delay(20);
 }
 
 //----------------------------------------------------------------------------
@@ -587,10 +613,11 @@ static String  _BuildStandardResponsePage(const String &contents)
   reply += "<br/>\r\n"
            "Chip ID: " FONT_OTAG_CODE;
   reply += String(chipId, HEX);
-  reply += "</font>";
-  reply += "<br/>\r\n"
-           "MAC Address: " FONT_OTAG_CODE;
-  reply += WiFi.macAddress() + "</font>";
+  reply += "</font><br/>\r\n";
+  reply += "MAC Address: " FONT_OTAG_CODE + WiFi.macAddress() + "</font><br/>\r\n";
+  reply += "CPU Frequency: " FONT_OTAG_CODE + String(getCpuFrequencyMhz()) + " MHz</font><br/>\r\n";
+  reply += "APB Frequency: " FONT_OTAG_CODE + String(int32_t(getApbFrequency() / 1.0e+6f)) + " MHz</font><br/>\r\n";
+  reply += "XTAL Frequency: " FONT_OTAG_CODE + String(getXtalFrequencyMhz()) + " MHz</font>";
 
   if (WiFi.status() == WL_CONNECTED)
   {
@@ -613,24 +640,24 @@ static String  _BuildStandardResponsePage(const String &contents)
 #define FORM_INPUTBOX(__name, __title, __value) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
-    "    <td><input type=\"text\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
+    "    <td><input type=\"text\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"/></td>\r\n" \
     "  </tr>"
 #define FORM_PASSWORD(__name, __title, __value) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
-    "    <td><input type=\"password\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"><input type=\"checkbox\" onclick=\"togglePassword_" __name "()\">Show\r\n" \
+    "    <td><input type=\"password\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"/><input type=\"checkbox\" onclick=\"togglePassword_" __name "()\"/>Show\r\n" \
     "      <script>function togglePassword_" __name "() { var x = document.getElementById(\"" __name "\"); if (x.type == \"password\") x.type = \"text\"; else x.type = \"password\"; }</script>" \
     "    </td>" \
     "  </tr>"
 #define FORM_SLIDER(__name, __title, __min, __max, __value) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
-    "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"></td>\r\n" \
+    "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"/></td>\r\n" \
     "  </tr>"
 #define FORM_SLIDER_RST(__name, __title, __min, __max, __value, __default) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "\">" __title ":</label></td>\r\n" \
-    "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\">&nbsp;\r\n" \
+    "    <td><input type=\"range\" min=\"" __min "\" max=\"" __max "\" id=\"" __name "\" name=\"" __name "\" value=\"" + __value + "\"/>&nbsp;\r\n" \
     "      <button type=\"button\" style=\"height:20px;\" onclick=\"reset_" __name "()\">Reset</button>\r\n" \
     "      <script>function reset_" __name "() { var x = document.getElementById(\"" __name "\"); x.value = \""  __default  "\"; }</script>" \
     "    </td>\r\n" \
@@ -638,9 +665,9 @@ static String  _BuildStandardResponsePage(const String &contents)
 #define FORM_RGB(__name, __title, __value_r, __value_g, __value_b) \
     "  <tr>\r\n" \
     "    <td><label for=\"" __name "_r\">" __title ":</label></td>\r\n" \
-    "    <td><input type=\"text\" id=\"" __name "_r\" name=\"" __name "_r\" value=\"" + __value_r + "\" style=\"width:50px\">\r\n" \
-    "        <input type=\"text\" id=\"" __name "_g\" name=\"" __name "_g\" value=\"" + __value_g + "\" style=\"width:50px\">\r\n" \
-    "        <input type=\"text\" id=\"" __name "_b\" name=\"" __name "_b\" value=\"" + __value_b + "\" style=\"width:50px\"></td>\r\n" \
+    "    <td><input type=\"text\" id=\"" __name "_r\" name=\"" __name "_r\" value=\"" + __value_r + "\" style=\"width:50px\"/>\r\n" \
+    "        <input type=\"text\" id=\"" __name "_g\" name=\"" __name "_g\" value=\"" + __value_g + "\" style=\"width:50px\"/>\r\n" \
+    "        <input type=\"text\" id=\"" __name "_b\" name=\"" __name "_b\" value=\"" + __value_b + "\" style=\"width:50px\"/></td>\r\n" \
     "  </tr><tr>\r\n"
 
 //----------------------------------------------------------------------------
@@ -653,20 +680,35 @@ static void _HandleRoot()
            "  <table>\r\n"
            "  <tr>\r\n"
            "    <td><label for=\"mode\">Mode:</label></td>\r\n"
-           "    <td><select id=\"mode\" name=\"mode\">\r\n"
-           "      <option value=\"0\">Normal</option>\r\n"
-           "      <option value=\"1\"" + String(state_mode == 1 ? " selected" : "") + ">Hue cycle</option>\r\n"
-           "      <option value=\"2\"" + String(state_mode == 2 ? " selected" : "") + ">Debug regions</option>\r\n"
-           "      <option value=\"3\"" + String(state_mode == 3 ? " selected" : "") + ">Debug ID</option>\r\n"
-           "      <option value=\"4\"" + String(state_mode == 4 ? " selected" : "") + ">Debug RGB Cycle</option>\r\n"
-           "    </select></td>\r\n"
+           "    <td>\r\n"
+           "      <select id=\"mode\" name=\"mode\" onChange=\"on_mode_changed()\">\r\n"
+           "        <option value=\"0\">Normal</option>\r\n"
+           "        <option value=\"1\"" + String(state_mode == 1 ? " selected" : "") + ">Hue cycle</option>\r\n"
+           "        <option value=\"2\"" + String(state_mode == 2 ? " selected" : "") + ">Debug regions</option>\r\n"
+#if defined(ENABLE_DEBUG_ID)
+           "        <option value=\"3\"" + String(state_mode == 3 ? " selected" : "") + ">Debug ID</option>\r\n"
+#endif
+           "        <option value=\"4\"" + String(state_mode == 4 ? " selected" : "") + ">Debug ID Cycle</option>\r\n"
+           "        <option value=\"5\"" + String(state_mode == 5 ? " selected" : "") + ">Debug RGB Cycle</option>\r\n"
+           "      </select>&nbsp;\r\n"
+#if defined(ENABLE_DEBUG_ID)
+           "      <input type=\"text\" id=\"did\" name=\"did\" value=\"" + String(state_debug_id) + "\" style=\"width: 40px; visibility: " + String(state_mode == 3 ? "visible" : "hidden") + ";\">\r\n"
+           "      <script>function on_mode_changed() {\r\n"
+           "          var m = document.getElementById(\"mode\");\r\n"
+           "          var id = document.getElementById(\"did\");\r\n"
+           "          id.style.visibility = (m.value == 3) ? 'visible' : 'hidden';\r\n"
+           "        }</script>\r\n"
+#else
+           "      <script>function on_mode_changed() {}</script>\r\n"
+#endif
+           "    </td>\r\n"
            "  </tr>\r\n"
            "  <tr>\r\n"
            "    <td colspan=2 height=\"25px\"><big><b>Color control:</b></big></td>\r\n"
            "  </tr>\r\n"
-           FORM_SLIDER_RST("brightness", "Brightness", "0", "255", String(state_brightness), "255")
-           FORM_SLIDER_RST("sat_shift", "Saturation", "-255", "255", String(state_sat_shift), "0")
-           FORM_SLIDER_RST("hue_shift", "Hue shift", "0", "255", String(state_hue_shift), "0")
+           FORM_SLIDER_RST("bright", "Brightness", "0", "255", String(state_brightness), "255")
+           FORM_SLIDER_RST("sshift", "Saturation", "-255", "255", String(state_sat_shift), "0")
+           FORM_SLIDER_RST("hshift", "Hue shift", "0", "255", String(state_hue_shift), "0")
            FORM_RGB("col_eye_l", "Left eye color", String(state_color_eye_l.r), String(state_color_eye_l.g), String(state_color_eye_l.b))
            FORM_RGB("col_eye_r", "Right eye color", String(state_color_eye_r.r), String(state_color_eye_r.g), String(state_color_eye_r.b))
            FORM_RGB("col_nose", "Nose color", String(state_color_nose.r), String(state_color_nose.g), String(state_color_nose.b))
@@ -677,15 +719,15 @@ static void _HandleRoot()
            "  <tr>\r\n"
            "    <td colspan=2 height=\"25px\"><big><b>Animation:</b></big></td>\r\n"
            "  </tr>\r\n"
-           FORM_SLIDER("wave_speed", "Wave anim speed", "0", "100", String(state_wave_speed))
-           FORM_SLIDER("wave_min", "Wave min intensity", "0", "100", String(state_wave_min))
-           FORM_SLIDER("wave_contrast", "Wave contrast", "0", "3", String(state_wave_contrast))
-           FORM_SLIDER("wave_tiling", "Wave tiling", "0", "100", String(state_wave_tiling))
-           FORM_SLIDER("base_speed", "Base anim speed", "0", "100", String(state_base_speed))
-           FORM_SLIDER("base_min", "Base min intensity", "0", "100", String(state_base_min))
-           FORM_SLIDER("hue_speed", "Hue shift speed", "0", "100", String(state_hue_speed))
+           FORM_SLIDER("wspeed", "Wave anim speed", "0", "100", String(state_wave_speed))
+           FORM_SLIDER("wmin", "Wave min intensity", "0", "100", String(state_wave_min))
+           FORM_SLIDER("wcontrast", "Wave contrast", "0", "3", String(state_wave_contrast))
+           FORM_SLIDER("wtiling", "Wave tiling", "0", "100", String(state_wave_tiling))
+           FORM_SLIDER("bspeed", "Base anim speed", "0", "100", String(state_base_speed))
+           FORM_SLIDER("bmin", "Base min intensity", "0", "100", String(state_base_min))
+           FORM_SLIDER("hspeed", "Hue shift speed", "0", "100", String(state_hue_speed))
            "  <tr>\r\n"
-           "    <td colspan=2><input type=\"submit\" value=\"Submit\" id=\"submit\">&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
+           "    <td colspan=2><input type=\"submit\" value=\"Submit\" id=\"submit\"/>&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
            "  </tr>\r\n"
            "  </table>\r\n"
            "</form>\r\n";
@@ -698,12 +740,13 @@ static void _HandleRoot()
            FORM_INPUTBOX("ssid", "WiFi SSID", wifi_ST_SSID)
            FORM_PASSWORD("passwd", "WiFi Password", wifi_ST_Pass)
            "  <tr>\r\n"
-           "    <td colspan=2><input type=\"submit\" value=\"Submit\">&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
+           "    <td colspan=2><input type=\"submit\" value=\"Submit\"/>&nbsp;<span class=\"statusCtrl\"></span></td>\r\n"
            "  </tr>\r\n"
            "  </table>\r\n"
            "</form>\r\n"
     		   "<hr/>\r\n"
     		   "<a href=\"/set_credentials_ap\">Change access-point settings</a><br/>\r\n"
+#if !defined(ENABLE_DEBUG_ID)
            "<script>\r\n"
            "function postFormNoRefresh(e)\r\n"
            "{\r\n"
@@ -725,6 +768,7 @@ static void _HandleRoot()
            "  document.getElementById(\"configForm\").addEventListener(\"submit\", postFormNoRefresh);\r\n"
            "  document.getElementById(\"wifiForm\").addEventListener(\"submit\", postFormNoRefresh);\r\n"
            "});\r\n"
+#endif
            "</script>\r\n";
 
   server.send(200, "text/html", _BuildStandardResponsePage(reply));
@@ -819,7 +863,7 @@ static void _HandleSetCredentialsAP()
              FORM_INPUTBOX("ssid", "Access-point SSID", wifi_AP_SSID)
              FORM_PASSWORD("passwd", "Access-point Password", wifi_AP_Pass)
              "  <tr>\r\n"
-             "    <td colspan=2><input type=\"submit\" value=\"Submit\"></td>\r\n"
+             "    <td colspan=2><input type=\"submit\" value=\"Submit\"/></td>\r\n"
              "  </tr>\r\n"
              "  </table>\r\n"
 		         "</form>\r\n";
@@ -870,25 +914,27 @@ static void _HandleConfigure()
     const int32_t argInt = server.arg(i).toInt();
     if (argName == "mode")
        state_mode = argInt;
-    else if (argName == "brightness")
+    else if (argName == "did")
+       state_debug_id = argInt;
+    else if (argName == "bright")
        state_brightness = argInt;
-    else if (argName == "wave_speed")
+    else if (argName == "wspeed")
        state_wave_speed = argInt;
-    else if (argName == "wave_min")
+    else if (argName == "wmin")
        state_wave_min = argInt;
-    else if (argName == "wave_contrast")
+    else if (argName == "wcontrast")
        state_wave_contrast = argInt;
-    else if (argName == "wave_tiling")
+    else if (argName == "wtiling")
        state_wave_tiling = argInt;
-    else if (argName == "base_speed")
+    else if (argName == "bspeed")
        state_base_speed = argInt;
-    else if (argName == "base_min")
+    else if (argName == "bmin")
        state_base_min = argInt;
-    else if (argName == "hue_shift")
-       state_hue_shift = argInt;
-    else if (argName == "sat_shift")
+    else if (argName == "sshift")
        state_sat_shift = argInt;
-    else if (argName == "hue_speed")
+    else if (argName == "hshift")
+       state_hue_shift = argInt;
+    else if (argName == "hspeed")
        state_hue_speed = argInt;
     else if (argName == "col_eye_l_r")  // Left eye
        state_color_eye_l.r = argInt;
@@ -935,6 +981,10 @@ static void _HandleConfigure()
   }
 
   ESP32Flash_WriteServerInfo();
+
+#if defined(BUGGY_HW)
+  refresh_LEDs();
+#endif
 
   // Auto-redirect immediately to the root
   server.send(200, "text/html", "<html><head><meta http-equiv=\"refresh\" content=\"3; URL=/\" /></head><body></body></html>");
@@ -1041,6 +1091,7 @@ void  ESP32Flash_WriteServerInfo()
   EEPROM.put(kEEPROM_AP_pass_addr, eeprom_AP_pass);
 
   EEPROM.put(kEEPROM_mode_addr, state_mode);
+  EEPROM.put(kEEPROM_debug_id_addr, state_debug_id);
   EEPROM.put(kEEPROM_bright_addr, state_brightness);
 
   EEPROM.put(kEEPROM_wave_speed_addr, state_wave_speed);
@@ -1112,6 +1163,7 @@ void  ESP32Flash_ReadServerInfo()
 
   // Read state
   EEPROM.get(kEEPROM_mode_addr, state_mode);
+  EEPROM.get(kEEPROM_debug_id_addr, state_debug_id);
   EEPROM.get(kEEPROM_bright_addr, state_brightness);
   EEPROM.get(kEEPROM_wave_speed_addr, state_wave_speed);
   EEPROM.get(kEEPROM_wave_min_addr, state_wave_min);
