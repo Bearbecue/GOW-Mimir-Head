@@ -187,16 +187,21 @@ static_assert(kEEPROM_total_size == kEEPROM_col_throat_addr + kEEPROM_col_rgb_si
 
 //----------------------------------------------------------------------------
 
+float last_update_time = 0.0f;
+
+//----------------------------------------------------------------------------
+
 void setup()
 {
-//  setCpuFrequencyMhz(160);
+  // Force-set frequency to 80 MHz instead of 240 MHz: No need for the high freq, and module heats-up less @ 80
+  setCpuFrequencyMhz(80);
 
+  // Setup LEDs
   pinMode(PIN_OUT_WS2812, OUTPUT);
 
   for (int i = 0; i < NUM_LEDS; i++)
     leds[i].setRGB(0, 0, 0);
 
-  // Setup LED strip
   FastLED.addLeds<WS2812, PIN_OUT_WS2812, GRB>(leds, NUM_LEDS);  // The WS2812 strip I got from aliexpress has red and green swapped, so GRB instead of RGB
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);  // 5V, 2A
   FastLED.setBrightness(255);
@@ -210,7 +215,7 @@ void setup()
 
   // Init baselines
   chipId = 0;
-  for(int i=0; i<17; i=i+8)
+  for(int i = 0; i < 17; i += 8)
     chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
   Serial.printf("ESP32 Chip model = %s Rev %d\n", ESP.getChipModel(), ESP.getChipRevision());
   Serial.printf("This chip has %d cores\n", ESP.getChipCores());
@@ -239,62 +244,7 @@ void setup()
   // Try to connect to the wifi network
   ConnectToWiFi();
 
-  WaitForWiFi(2000);  // Wait at most 2 seconds for wifi
-}
-
-//----------------------------------------------------------------------------
-
-static CRGB  ShiftHS(const CRGB &color, int32_t hue_shift, int32_t sat_shift)
-{
-  if (hue_shift == 0 && sat_shift == 0) // Nothing to shift
-    return color;
-
-  // Convert from RGB to HSV
-  int32_t       h = 0;
-  int32_t       s = 0;
-  const int32_t v = max(max(color.r, color.g), color.b);
-  const int32_t delta = v - min(min(color.r, color.g), color.b);
-  if (delta > 0)
-  {
-    const float invDelta = 1.0f / delta;
-    float   hvalue;
-    if (v == color.r)
-      hvalue = (color.g - color.b) * invDelta + 0.0f;
-    else if (v == color.g)
-      hvalue = (color.b - color.r) * invDelta + 2.0f;
-    else
-      hvalue = (color.r - color.g) * invDelta + 4.0f;
-    if (hvalue < 0.0f)
-      hvalue += 6.0f;
-
-    h = clamp(int32_t(hvalue * 255.0f / 6.0f), 0, 255);
-    s = clamp(int32_t(delta * 255.0f / v), 0, 255);
-  }
-
-  // Shift the hue & sat
-  h = (h + hue_shift) & 0xFF;         // wrap hue
-  s = clamp(s + sat_shift, 0, 0xFF);  // clamp sat
-
-  // Convert back from HSV to RGB
-  const float delta2 = (s * v) / 255.0f;
-  const float h6 = h * 6.0f / 255.0f;
-  const float r0n = 2.0f - fabsf(h6 - 3.0f);
-  const float g0n = fabsf(h6 - 2.0f) - 1.0f;
-  const float b0n = fabsf(h6 - 4.0f) - 1.0f;
-  return CRGB(v - int32_t(delta2 * clamp(r0n, 0.0f, 1.0f)),
-              v - int32_t(delta2 * clamp(g0n, 0.0f, 1.0f)),
-              v - int32_t(delta2 * clamp(b0n, 0.0f, 1.0f)));
-}
-
-//----------------------------------------------------------------------------
-// Returns a -1, 1 noise
-
-static float  Noise(float t)
-{
-  return sinf(t *  1.000f) * 0.400f +
-         sinf(t *  3.275f) * 0.325f +
-         sinf(t *  7.241f) * 0.200f +
-         sinf(t * 18.800f) * 0.075f;
+  WaitForWiFi(5000);  // Wait at most 5 seconds for wifi
 }
 
 //----------------------------------------------------------------------------
@@ -361,19 +311,14 @@ void loop()
 
   const float   dt = loopTimer.dt();
   const float   et = loopTimer.elapsedTime();
+  const int32_t frame_start_us = micros();
 
 #if !defined(BUGGY_HW)
-  // What to configure:
-  // - Mode: 0=normal, 1=hue cycle, 2=debug zones, 3=debug ID, 4=debug ID cycle, 5=debug RGB cycle
-  // - overall hue shift
-  // - 5 inner colors
-  // - 2 eye colors
-  // - animation speed (main)
-  // - animation speed (eyes)
+  // Update LED animations
 
   FastLED.setBrightness(state_brightness);
 
-  if (state_mode == 0 || state_mode == 1)
+  if (state_mode == 0 || state_mode == 1) // Normal & hue-cycle
   {
     const float   hue_speed = (state_mode == 1) ? 0.5f * state_hue_speed / 100.0f : 0.0f;
     const int32_t hue_shift_anim = int32_t(fmodf(hue_speed * et, 1.0f) * 255.0f);
@@ -421,7 +366,7 @@ void loop()
       SET_LED_WITH_PROPAGATION(LED_ID_EYE_L, colorEyeL);
 #undef SET_LED_WITH_PROPAGATION
   }
-  else if (state_mode == 2) // Coloration per-area
+  else if (state_mode == 2) // Debug coloration per-area
   {
     for (int i = 0; i < NUM_LEDS_NECK; i++)
       leds[i + LED_ID_NECK] = CRGB(255, 40, 10);
@@ -440,7 +385,7 @@ void loop()
     for (int i = 0; i < NUM_LEDS_EYE_L; i++)
       leds[0 + LED_ID_EYE_L] = CRGB(255, 0, 0);
   }
-  else
+  else  // All the other debug displays
   {
     // Increase 'x' counter every 0.2 seconds to animate the debug modes:
     static int    x = 0;
@@ -482,6 +427,9 @@ void loop()
   FastLED.show();
 #endif
 
+  const int32_t frame_end_us = micros();
+  last_update_time = (frame_end_us - frame_start_us) * 1.0e-6f;
+
   delay(20);
 }
 
@@ -516,12 +464,12 @@ void  WaitForWiFi(int maxMs)
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
+  Serial.println(".");
 
   if (WiFi.status() == WL_CONNECTED)
   {
     Serial.println("WiFi connected to " + wifi_ST_SSID);
-    Serial.println("IP address: " + WiFi.localIP());
+    Serial.println("IP address: " + WiFi.localIP().toString());
   }
 }
 
@@ -614,6 +562,7 @@ static String  _BuildStandardResponsePage(const String &contents)
            "Chip ID: " FONT_OTAG_CODE;
   reply += String(chipId, HEX);
   reply += "</font><br/>\r\n";
+  reply += "Frame time: " FONT_OTAG_CODE + String(last_update_time * 1.0e+3f, 2) + " ms</font><br/>\r\n";
   reply += "MAC Address: " FONT_OTAG_CODE + WiFi.macAddress() + "</font><br/>\r\n";
   reply += "CPU Frequency: " FONT_OTAG_CODE + String(getCpuFrequencyMhz()) + " MHz</font><br/>\r\n";
   reply += "APB Frequency: " FONT_OTAG_CODE + String(int32_t(getApbFrequency() / 1.0e+6f)) + " MHz</font><br/>\r\n";
@@ -625,9 +574,9 @@ static String  _BuildStandardResponsePage(const String &contents)
              "IP Address: " FONT_OTAG_CODE;
     reply += WiFi.localIP().toString();
     reply += "</font><br/>\r\n"
-             "Signal strength: ";
+             "Signal strength: " FONT_OTAG_CODE;
     reply += WiFi.RSSI();
-    reply += " dB<br/>\r\n";
+    reply += " dB</font><br/>\r\n";
   }
 
   reply += "</body></html>\r\n";
@@ -855,8 +804,8 @@ static void _HandleSetCredentialsAP()
              "To reboot the device, simply power it off, then on again.<br/>\r\n"
              "<hr/>\r\n"
     			   "<font color=red><b>!!!! DANGER ZONE !!!</b><br/>\r\n"
-    			   "If you do not remember the access-point password, and you did not setup a connection to your local WiFi network, there will be no way to recover this.\r\n"
-    			   "The device will be \"bricked\" as you won't be able to connect to it from anywhere, and only re-flashing the firmware from the USB connection will fix this.</font><br/>\r\n"
+    			   "If you do not remember the access-point password, and you did not setup a connection to your local WiFi network, there will be no way to recover this.<br/>\r\n"
+    			   "The device will be \"bricked\" as you won't be able to connect to it from anywhere, and only re-flashing the firmware from the USB connector will fix this.</font><br/>\r\n"
     			   "<br/>\r\n"
     			   "<form action=\"/set_credentials_ap\">\r\n"
              "  <table>\r\n"
